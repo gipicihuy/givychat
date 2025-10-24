@@ -45,6 +45,22 @@
         #messages::-webkit-scrollbar { width: 6px; }
         #messages::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 3px; }
         #messages::-webkit-scrollbar-track { background: transparent; }
+        
+        .image-preview {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 8px;
+            margin-top: 8px;
+            object-fit: contain;
+        }
+
+        .loading-pulse {
+            animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
     </style>
     
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -58,29 +74,32 @@
             <span id="user-info" class="text-sm text-gray-400">Connecting...</span>
         </div>
 
-        <!-- FILE PREVIEW & LOADING BAR - TETAP VISIBLE SAAT UPLOAD -->
-        <div id="file-preview-area" class="px-4 pt-2 hidden">
-            <div class="p-3 bg-white/10 rounded-lg flex items-center justify-between">
-                <div class="flex items-center space-x-3">
-                    <i id="preview-icon" class="fa-solid fa-file text-gray-400"></i>
-                    <span id="preview-filename" class="text-sm"></span>
-                    <span id="preview-filesize" class="text-xs text-gray-500"></span>
-                </div>
-                <button type="button" id="cancel-upload" class="text-gray-400 hover:text-white transition-colors" title="Cancel Upload">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
+        <!-- FILE PREVIEW SEBELUM KIRIM -->
+        <div id="file-preview-container" class="px-4 pt-2 hidden">
+            <div class="relative rounded-lg overflow-hidden border border-white/20">
+                <img id="preview-image" class="image-preview w-full" style="display: none;">
+                <video id="preview-video" class="image-preview w-full" style="display: none;" controls></video>
+                <audio id="preview-audio" class="w-full mt-2" style="display: none;" controls></audio>
+                <div id="preview-file-info" class="bg-white/5 p-3 text-xs text-gray-300" style="display: none;"></div>
             </div>
-            <div class="h-1 mt-1 bg-gray-700 rounded overflow-hidden">
-                <div id="loading-bar" class="h-full bg-blue-500 transition-all duration-300" style="width: 0%;"></div>
+            <div class="mt-2 flex gap-2">
+                <button type="button" id="remove-preview" class="text-xs bg-red-900/50 px-3 py-1 rounded hover:bg-red-800/50">Remove</button>
             </div>
-            <div id="upload-status" class="text-xs text-gray-400 mt-2 text-center"></div>
+        </div>
+
+        <!-- LOADING BAR SAAT UPLOAD -->
+        <div id="upload-progress" class="px-4 pt-2 hidden">
+            <div class="text-xs text-gray-400 mb-1">Uploading...</div>
+            <div class="w-full h-2 bg-gray-700 rounded overflow-hidden">
+                <div id="progress-bar" class="h-full bg-blue-500 transition-all duration-200" style="width: 0%;"></div>
+            </div>
         </div>
 
         <div id="messages" class="flex-1 p-4 space-y-4 pb-24"></div>
 
         <div class="p-4 border-t border-white/10 fixed bottom-0 left-1/2 transform -translate-x-1/2 bg-black z-10 w-full max-w-[600px]">
             <form id="message-form" class="flex space-x-2">
-                <input type="file" id="file-upload" accept="image/*,video/*,audio/*,.pdf,.txt" class="hidden">
+                <input type="file" id="file-upload" accept="image/*,video/*,audio/*,.pdf,.txt,.zip" class="hidden">
                 <button type="button" id="upload-button" class="form-input p-3 hover:bg-white/20 transition-colors" title="Attach File">
                     <i class="fa-solid fa-paperclip"></i>
                 </button>
@@ -98,19 +117,30 @@
     </div>
 
     <script>
-        // ==================== SECURITY: SANITIZE ALL USER INPUT ====================
+        // ==================== SECURITY: STRICT INPUT SANITIZATION ====================
         
-        function sanitizeHTML(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
+        function sanitizeText(text) {
+            // Hanya allow plain text, NO HTML TAGS ALLOWED
+            if (typeof text !== 'string') return '';
+            return text.replace(/[<>\"'&]/g, char => ({
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;',
+                '&': '&amp;'
+            }[char]));
         }
 
-        function escapeAttribute(text) {
-            return text.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        function isValidUrl(string) {
+            try {
+                const url = new URL(string);
+                return url.protocol === 'https:' || url.protocol === 'http:';
+            } catch (_) {
+                return false;
+            }
         }
 
-        // ==================== UTILITY FUNCTIONS ====================
+        // ==================== UTILITY ====================
         
         function formatBytes(bytes, decimals = 2) {
             if (bytes === 0) return '0 Bytes';
@@ -129,7 +159,7 @@
             });
         }
 
-        // ==================== UI STATE ====================
+        // ==================== STATE ====================
         
         const messageForm = document.getElementById('message-form');
         const messageInput = document.getElementById('message-input');
@@ -137,23 +167,28 @@
         const userInfoSpan = document.getElementById('user-info');
         const uploadButton = document.getElementById('upload-button');
         const fileUpload = document.getElementById('file-upload');
-        const uploadStatus = document.getElementById('upload-status');
         const sendButton = document.getElementById('send-button');
-        const filePreviewArea = document.getElementById('file-preview-area');
-        const previewFilename = document.getElementById('preview-filename');
-        const previewFilesize = document.getElementById('preview-filesize');
-        const previewIcon = document.getElementById('preview-icon');
-        const cancelUploadButton = document.getElementById('cancel-upload');
-        const loadingBar = document.getElementById('loading-bar');
+        
+        const filePreviewContainer = document.getElementById('file-preview-container');
+        const previewImage = document.getElementById('preview-image');
+        const previewVideo = document.getElementById('preview-video');
+        const previewAudio = document.getElementById('preview-audio');
+        const previewFileInfo = document.getElementById('preview-file-info');
+        const removePreviewBtn = document.getElementById('remove-preview');
+        
+        const uploadProgress = document.getElementById('upload-progress');
+        const progressBar = document.getElementById('progress-bar');
 
         let anonymousId = null;
         let isUploading = false;
+        let selectedFile = null;
+        let messageCount = 0;
 
         const MAX_FILE_SIZE = 6 * 1024 * 1024;
 
         // ==================== DISPLAY MESSAGE dengan SECURITY ====================
         
-        function displayMessage(data) {
+        function displayMessage(data, isNewMessage = false) {
             if (!data || !data.name) return;
 
             const messageElement = document.createElement('div');
@@ -165,13 +200,14 @@
             
             const time = data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : '...';
 
-            // SECURITY: Selalu escape/sanitize semua user input dari Firebase
-            const sanitizedName = sanitizeHTML(data.name);
-            const sanitizedText = sanitizeHTML(data.text || '');
+            // SECURITY: SANITIZE ALL TEXT - NO EXCEPTIONS
+            const sanitizedName = sanitizeText(data.name);
+            const sanitizedText = sanitizeText(data.text || '');
 
+            // Create name span with textContent only
             const nameElement = document.createElement('span');
             nameElement.className = `text-xs ${nameClass} mb-1`;
-            nameElement.innerHTML = `${sanitizedName} <span class="text-gray-500 text-xs">(${time})</span>`;
+            nameElement.textContent = `${sanitizedName} (${time})`;
 
             const bubbleElement = document.createElement('div');
             bubbleElement.className = `message-bubble ${bubbleClass} max-w-[85%]`;
@@ -179,74 +215,153 @@
             if (sanitizedText) {
                 const textElement = document.createElement('p');
                 textElement.className = 'text-sm';
-                textElement.textContent = sanitizedText;
+                textElement.textContent = sanitizedText; // SAFE: textContent, tidak innerHTML
                 bubbleElement.appendChild(textElement);
             }
             
-            // File attachment (simplified for demo)
-            if (data.fileUrl && data.fileName) {
-                const fileElement = document.createElement('p');
-                fileElement.className = 'text-xs mt-2 text-yellow-400';
-                const link = document.createElement('a');
-                link.href = data.fileUrl;
-                link.target = '_blank';
-                link.rel = 'noopener noreferrer'; // SECURITY: Prevent window.opener access
-                link.className = 'underline hover:text-yellow-300';
-                // SECURITY: Escape filename
-                link.textContent = escapeAttribute(data.fileName);
-                fileElement.innerHTML = '<i class="fa-solid fa-file-arrow-down mr-1"></i>';
-                fileElement.appendChild(link);
-                if (data.fileSize) {
-                    fileElement.innerHTML += ` (${formatBytes(data.fileSize)})`;
+            // File attachment - ONLY show safe URLs
+            if (data.fileUrl && data.fileName && isValidUrl(data.fileUrl)) {
+                const fileType = data.fileName.split('.').pop().toLowerCase();
+                const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileType);
+                const isVideo = ['mp4', 'webm', 'ogg'].includes(fileType);
+                const isAudio = ['mp3', 'wav', 'ogg'].includes(fileType);
+
+                if (isImage) {
+                    const img = document.createElement('img');
+                    img.src = data.fileUrl;
+                    img.className = 'image-preview w-full';
+                    img.alt = 'Image'; // Safe alt text
+                    bubbleElement.appendChild(img);
+                } else if (isVideo) {
+                    const video = document.createElement('video');
+                    video.src = data.fileUrl;
+                    video.controls = true;
+                    video.className = 'image-preview w-full';
+                    bubbleElement.appendChild(video);
+                } else if (isAudio) {
+                    const audio = document.createElement('audio');
+                    audio.src = data.fileUrl;
+                    audio.controls = true;
+                    audio.className = 'w-full mt-2';
+                    bubbleElement.appendChild(audio);
+                } else {
+                    // File link - safe text only
+                    const fileLink = document.createElement('a');
+                    fileLink.href = data.fileUrl;
+                    fileLink.target = '_blank';
+                    fileLink.rel = 'noopener noreferrer';
+                    fileLink.className = 'text-yellow-400 hover:underline text-xs mt-2 block';
+                    fileLink.textContent = `📎 ${sanitizeText(data.fileName)}${data.fileSize ? ` (${formatBytes(data.fileSize)})` : ''}`;
+                    bubbleElement.appendChild(fileLink);
                 }
-                bubbleElement.appendChild(fileElement);
             }
 
             messageElement.appendChild(nameElement);
             messageElement.appendChild(bubbleElement);
             messagesDiv.appendChild(messageElement);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            
+            // HANYA scroll kalo message baru, tidak tiap kali render
+            if (isNewMessage) {
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
+        }
+
+        // ==================== PREVIEW FILE SEBELUM KIRIM ====================
+        
+        function showPreview(file) {
+            if (!file) {
+                filePreviewContainer.classList.add('hidden');
+                previewImage.style.display = 'none';
+                previewVideo.style.display = 'none';
+                previewAudio.style.display = 'none';
+                previewFileInfo.style.display = 'none';
+                return;
+            }
+
+            filePreviewContainer.classList.remove('hidden');
+            const fileType = file.type;
+            const fileName = file.name;
+
+            previewImage.style.display = 'none';
+            previewVideo.style.display = 'none';
+            previewAudio.style.display = 'none';
+            previewFileInfo.style.display = 'none';
+
+            if (fileType.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    previewImage.src = e.target.result;
+                    previewImage.style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            } else if (fileType.startsWith('video/')) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    previewVideo.src = e.target.result;
+                    previewVideo.style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            } else if (fileType.startsWith('audio/')) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    previewAudio.src = e.target.result;
+                    previewAudio.style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            } else {
+                const info = document.createElement('div');
+                info.textContent = `📄 ${sanitizeText(fileName)} (${formatBytes(file.size)})`;
+                previewFileInfo.innerHTML = '';
+                previewFileInfo.appendChild(info);
+                previewFileInfo.style.display = 'block';
+            }
         }
 
         // ==================== FILE UPLOAD ====================
         
         async function uploadFileToApi(file) {
             if (!file || file.size > MAX_FILE_SIZE) {
-                uploadStatus.textContent = `File size too large (max ${formatBytes(MAX_FILE_SIZE)})!`;
+                alert(`File too large! Max: ${formatBytes(MAX_FILE_SIZE)}`);
                 return null;
             }
 
             isUploading = true;
-            uploadStatus.textContent = 'Uploading...';
-            loadingBar.style.width = '10%';
-
-            const loadingInterval = setInterval(() => {
-                const currentWidth = parseInt(loadingBar.style.width);
-                if (currentWidth < 90) {
-                    loadingBar.style.width = `${currentWidth + 5}%`;
-                }
-            }, 500);
+            uploadProgress.classList.remove('hidden');
+            progressBar.style.width = '0%';
 
             try {
                 const base64 = await fileToBase64(file);
-                loadingBar.style.width = '80%';
                 
-                // Mock upload (ganti dengan real API)
-                await new Promise(resolve => setTimeout(resolve, 1500));
-                
-                uploadStatus.textContent = 'Upload complete!';
-                loadingBar.style.width = '100%';
-                
-                return 'https://example.com/mock-file-' + Date.now();
+                // Simulate upload dengan progress
+                for (let i = 0; i <= 100; i += 10) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    progressBar.style.width = `${i}%`;
+                }
 
+                // Ganti dengan actual API call
+                const response = await fetch('/api/upload-file', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ file: base64 })
+                });
+
+                const data = await response.json();
+                if (data.success && data.url && isValidUrl(data.url)) {
+                    progressBar.style.width = '100%';
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    return data.url;
+                } else {
+                    throw new Error('Upload failed');
+                }
             } catch (error) {
                 console.error('Upload error:', error);
-                uploadStatus.textContent = `Upload failed: ${error.message}`;
-                loadingBar.style.width = '0%';
+                progressBar.style.width = '0%';
+                alert(`Upload failed: ${error.message}`);
                 return null;
             } finally {
-                clearInterval(loadingInterval);
                 isUploading = false;
+                uploadProgress.classList.add('hidden');
+                progressBar.style.width = '0%';
             }
         }
 
@@ -263,7 +378,7 @@
 
         function updateSendButtonState() {
             const hasText = messageInput.value.trim() !== '';
-            const hasFile = fileUpload.files.length > 0;
+            const hasFile = selectedFile !== null;
             sendButton.disabled = !(hasText || hasFile) || isUploading;
         }
 
@@ -277,43 +392,24 @@
 
         fileUpload.addEventListener('change', (e) => {
             const file = e.target.files[0];
+            selectedFile = file;
             
-            if (!file) {
-                filePreviewArea.classList.add('hidden');
+            if (file && file.size <= MAX_FILE_SIZE) {
+                showPreview(file);
                 updateSendButtonState();
-                return;
-            }
-
-            if (file.size > MAX_FILE_SIZE) {
-                alert(`File too large. Max: ${formatBytes(MAX_FILE_SIZE)}`);
+            } else if (file) {
+                alert(`File too large! Max: ${formatBytes(MAX_FILE_SIZE)}`);
+                selectedFile = null;
                 fileUpload.value = '';
+                filePreviewContainer.classList.add('hidden');
                 updateSendButtonState();
-                return;
             }
-            
-            filePreviewArea.classList.remove('hidden');
-            previewFilename.textContent = file.name;
-            previewFilesize.textContent = `(${formatBytes(file.size)})`;
-
-            const type = file.type.split('/')[0];
-            if (type === 'image') {
-                previewIcon.className = 'fa-solid fa-image text-green-400';
-            } else if (type === 'video') {
-                previewIcon.className = 'fa-solid fa-video text-red-400';
-            } else if (type === 'audio') {
-                previewIcon.className = 'fa-solid fa-music text-purple-400';
-            } else {
-                previewIcon.className = 'fa-solid fa-file text-gray-400';
-            }
-
-            updateSendButtonState();
         });
 
-        cancelUploadButton.addEventListener('click', () => {
+        removePreviewBtn.addEventListener('click', () => {
+            selectedFile = null;
             fileUpload.value = '';
-            filePreviewArea.classList.add('hidden');
-            loadingBar.style.width = '0%';
-            uploadStatus.textContent = '';
+            filePreviewContainer.classList.add('hidden');
             updateSendButtonState();
         });
 
@@ -321,13 +417,14 @@
             e.preventDefault();
 
             const messageText = messageInput.value.trim();
-            const file = fileUpload.files[0];
+            const file = selectedFile;
 
             if (!messageText && !file) return;
             if (isUploading) return;
 
             messageInput.disabled = true;
             sendButton.disabled = true;
+            uploadButton.disabled = true;
             
             let fileUrl = null;
             
@@ -335,15 +432,17 @@
                 fileUrl = await uploadFileToApi(file);
                 if (!fileUrl && !messageText) {
                     messageInput.disabled = false;
+                    uploadButton.disabled = false;
                     updateSendButtonState();
                     return;
                 }
             }
 
-            // Demo: Show uploaded message
+            // Send message
             if (messageText || fileUrl) {
+                messageCount++;
                 const newMessage = {
-                    name: `Anonymous #${anonymousId || 'demo'}`,
+                    name: `Anonymous #${anonymousId}`,
                     anonymousId: anonymousId,
                     text: messageText,
                     timestamp: Date.now(),
@@ -351,19 +450,16 @@
                     fileName: file ? file.name : null,
                     fileSize: file ? file.size : null
                 };
-                displayMessage(newMessage);
+                displayMessage(newMessage, true); // true = scroll ke bawah
             }
             
             messageInput.value = '';
-            messageInput.disabled = false;
+            selectedFile = null;
             fileUpload.value = '';
-            // PENTING: Jangan hide preview area sampai upload selesai!
-            setTimeout(() => {
-                filePreviewArea.classList.add('hidden');
-                loadingBar.style.width = '0%';
-                uploadStatus.textContent = '';
-            }, 2000);
+            filePreviewContainer.classList.add('hidden');
             
+            messageInput.disabled = false;
+            uploadButton.disabled = false;
             updateSendButtonState();
             messageInput.focus();
         });
@@ -371,6 +467,16 @@
         // ==================== INITIALIZE ====================
         anonymousId = Math.floor(Math.random() * 10000);
         userInfoSpan.textContent = `You are Anonymous #${anonymousId}`;
+        
+        // Demo: Add initial message
+        setTimeout(() => {
+            displayMessage({
+                name: 'Anonymous #5555',
+                anonymousId: '5555',
+                text: 'Welcome to #chat! This is a secure, anonymous chat.',
+                timestamp: Date.now()
+            }, false); // false = jangan scroll
+        }, 500);
     </script>
 </body>
 </html>
