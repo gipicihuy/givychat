@@ -43,6 +43,17 @@
         #messages::-webkit-scrollbar { width: 6px; }
         #messages::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 3px; }
         #messages::-webkit-scrollbar-track { background: transparent; }
+        
+        .message-image {
+            max-height: 200px;
+            max-width: 100%;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: opacity 0.2s ease;
+        }
+        .message-image:hover {
+            opacity: 0.8;
+        }
     </style>
     
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -72,8 +83,7 @@
             </div>
         </div>
 
-        <div id="messages" class="flex-1 p-4 space-y-4">
-            </div>
+        <div id="messages" class="flex-1 p-4 space-y-4"></div>
 
         <div class="p-4 border-t border-white/10 sticky bottom-0 bg-black z-10">
             <form id="message-form" class="flex space-x-2">
@@ -93,15 +103,15 @@
         </div>
     </div>
     
-    <div id="image-modal" class="fixed inset-0 bg-black bg-opacity-90 z-50 hidden flex justify-center items-center p-4" onclick="closeModal()">
+    <div id="image-modal" class="fixed inset-0 bg-black bg-opacity-90 z-50 hidden flex justify-center items-center p-4">
         <div class="relative max-w-full max-h-full">
-            <img id="modal-image" src="" alt="Image Preview" class="max-w-full max-h-[90vh] object-contain cursor-pointer" onclick="event.stopPropagation()">
+            <img id="modal-image" src="" alt="Image Preview" class="max-w-full max-h-[90vh] object-contain">
             
             <button class="absolute top-4 right-4 text-white text-3xl hover:text-gray-400" title="Close" onclick="closeModal()">
                 <i class="fa-solid fa-xmark"></i>
             </button>
             
-            <a id="modal-download-link" href="#" target="_blank" class="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/20 transition-colors" onclick="event.stopPropagation()">
+            <a id="modal-download-link" href="#" target="_blank" class="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/20 transition-colors">
                 <i class="fa-solid fa-download mr-2"></i>Download Original
             </a>
         </div>
@@ -117,7 +127,6 @@
         const uploadStatus = document.getElementById('upload-status');
         const sendButton = document.getElementById('send-button');
 
-        // Elements for Preview/Loading
         const filePreviewArea = document.getElementById('file-preview-area');
         const previewFilename = document.getElementById('preview-filename');
         const previewFilesize = document.getElementById('preview-filesize');
@@ -125,7 +134,6 @@
         const cancelUploadButton = document.getElementById('cancel-upload');
         const loadingBar = document.getElementById('loading-bar');
         
-        // Elements for Modal
         const imageModal = document.getElementById('image-modal');
         const modalImage = document.getElementById('modal-image');
         const modalDownloadLink = document.getElementById('modal-download-link');
@@ -136,9 +144,8 @@
         let anonymousId = localStorage.getItem('anonymous_id');
         const UPLOAD_API_ENDPOINT = '/api/upload-file';
         const CONFIG_API_ENDPOINT = '/api/get-firebase-config';
-        const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB limit
+        const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
-        // --- Utility Function: Format File Size ---
         function formatBytes(bytes, decimals = 2) {
             if (bytes === 0) return '0 Bytes';
             const k = 1024;
@@ -148,25 +155,24 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
         }
 
-        // --- Modal Functions ---
-        function openModal(imageUrl, event) {
-            // Mencegah navigasi atau event bubbling yang tidak diinginkan
-            if (event) {
-                event.preventDefault(); 
-                event.stopPropagation();
-            }
-            
+        window.openModal = function(imageUrl) {
             modalImage.src = imageUrl;
             modalDownloadLink.href = imageUrl;
             imageModal.classList.remove('hidden');
-            document.body.style.overflow = 'hidden'; // Nonaktifkan scroll body
+            document.body.style.overflow = 'hidden';
         }
 
-        function closeModal() {
+        window.closeModal = function() {
             imageModal.classList.add('hidden');
             modalImage.src = '';
-            document.body.style.overflow = ''; // Aktifkan kembali scroll body
+            document.body.style.overflow = '';
         }
+
+        imageModal.addEventListener('click', function(e) {
+            if (e.target === imageModal) {
+                closeModal();
+            }
+        });
         
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
@@ -174,7 +180,6 @@
             }
         });
 
-        // --- 1. Ambil Konfigurasi & Inisialisasi Firebase ---
         async function initializeFirebase() {
             try {
                 userInfoSpan.textContent = 'Fetching config...';
@@ -208,7 +213,6 @@
             }
         }
 
-        // --- 2. Logika Penomoran Anonymous (Persisten) ---
         async function getAnonymousId() {
             if (anonymousId) {
                 userInfoSpan.textContent = `You are Anonymous #${anonymousId}`;
@@ -227,7 +231,6 @@
             }
         }
 
-        // --- 3. Listener Pesan Baru ---
         function setupMessageListener() {
             messagesRef.on('child_added', (snapshot) => {
                 const message = snapshot.val();
@@ -235,7 +238,6 @@
             });
         }
 
-        // --- 4. Fungsi Tampilan Pesan ---
         function displayMessage(data) {
             const messageElement = document.createElement('div');
             messageElement.className = 'flex flex-col';
@@ -254,14 +256,12 @@
                 const fileType = fileName.split('.').pop().toLowerCase();
                 
                 if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileType)) {
-                    // KODE SUDAH BENAR: Langsung tag <img>, tanpa tag <a> pembungkus
                     contentHTML += `<img src="${data.fileUrl}" 
-                                      class="max-h-40 max-w-full rounded cursor-pointer mt-2" 
+                                      class="message-image mt-2" 
                                       alt="Image File" 
-                                      onclick="openModal('${data.fileUrl}', event)">`;
+                                      onclick="window.openModal('${data.fileUrl}')">`;
                 } else {
-                    // File non-gambar tetap berupa link download
-                    contentHTML += `<p class="text-xs mt-1"><i class="fa-solid fa-file mr-1"></i>File Attached: <a href="${data.fileUrl}" target="_blank" class="underline text-yellow-400">${fileName}</a></p>`;
+                    contentHTML += `<p class="text-xs mt-1"><i class="fa-solid fa-file mr-1"></i>File: <a href="${data.fileUrl}" target="_blank" class="underline text-yellow-400">${fileName}</a></p>`;
                 }
             }
 
@@ -275,7 +275,6 @@
             messagesDiv.scrollTop = messagesDiv.scrollHeight; 
         }
 
-        // --- 5. Logika Unggah File ke API Serverless ---
         async function uploadFileToApi(file) {
             if (file.size > MAX_FILE_SIZE) {
                 uploadStatus.textContent = 'File size too large (max 5MB)!';
@@ -340,8 +339,6 @@
             });
         }
 
-        // --- 6. Event Listeners ---
-
         uploadButton.addEventListener('click', () => fileUpload.click());
 
         messageInput.addEventListener('input', () => {
@@ -390,7 +387,6 @@
             }
         });
 
-
         messageForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const messageText = messageInput.value.trim();
@@ -426,7 +422,6 @@
             messageInput.focus();
         });
 
-        // Mulai proses
         initializeFirebase();
     </script>
 </body>
