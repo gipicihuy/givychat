@@ -56,6 +56,18 @@
         .message-image:hover {
             opacity: 0.8;
         }
+
+        /* Style untuk media dalam modal */
+        #media-preview-content img,
+        #media-preview-content video {
+            max-width: 100%;
+            max-height: 90vh;
+            object-fit: contain;
+        }
+        #media-preview-content video {
+            background-color: black;
+            border-radius: 8px;
+        }
     </style>
     
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -107,7 +119,8 @@
     
     <div id="image-modal" class="fixed inset-0 bg-black bg-opacity-90 z-50 hidden flex justify-center items-center p-4">
         <div class="relative max-w-full max-h-full">
-            <img id="modal-image" src="" alt="Image Preview" class="max-w-full max-h-[90vh] object-contain">
+            <div id="media-preview-content" class="max-w-full max-h-[90vh] flex justify-center items-center">
+                </div>
             
             <button type="button" class="absolute top-4 right-4 text-white text-3xl hover:text-gray-400" title="Close" onclick="closeModal()">
                 <i class="fa-solid fa-xmark"></i>
@@ -144,33 +157,88 @@
                 return v.toString(16);
             });
         }
+        
+        // Fungsi untuk menentukan MIME Type (karena Firebase/Qu.ax mungkin tidak menyediakannya)
+        function getMimeType(fileName) {
+            const ext = fileName.split('.').pop().toLowerCase();
+            const types = {
+                'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png', 'gif': 'image/gif', 'webp': 'image/webp',
+                'mp4': 'video/mp4', 'webm': 'video/webm', 'ogg': 'video/ogg',
+                'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'pdf': 'application/pdf',
+                'txt': 'text/plain',
+            };
+            return types[ext] || 'application/octet-stream';
+        }
+
 
         // ==================== MODAL FUNCTIONS ====================
         
-        // **PERBAIKAN: Hapus 'window.' dari definisi fungsi**
-        function openModal(imageUrl) {
+        // REVISI FUNGSI openModal untuk mendukung berbagai tipe file
+        function openModal(fileUrl, mimeType, fileName) {
             try {
-                const modalImage = document.getElementById('modal-image');
-                const modalDownloadLink = document.getElementById('modal-download-link');
                 const imageModal = document.getElementById('image-modal');
+                const contentDiv = document.getElementById('media-preview-content');
+                const modalDownloadLink = document.getElementById('modal-download-link');
                 
-                modalImage.src = imageUrl;
-                modalDownloadLink.href = imageUrl;
+                contentDiv.innerHTML = ''; 
+                modalDownloadLink.href = fileUrl;
+                
+                const type = mimeType.split('/')[0];
+                let mediaElement;
+                
+                if (type === 'image') {
+                    mediaElement = document.createElement('img');
+                    mediaElement.src = fileUrl;
+                    mediaElement.alt = 'Image Preview';
+                    mediaElement.className = 'max-w-full max-h-[90vh] object-contain';
+                    
+                } else if (type === 'video') {
+                    mediaElement = document.createElement('video');
+                    mediaElement.src = fileUrl;
+                    mediaElement.controls = true;
+                    mediaElement.autoplay = true;
+                    mediaElement.className = 'max-w-full max-h-[90vh]';
+                    
+                } else if (type === 'audio') {
+                    mediaElement = document.createElement('audio');
+                    mediaElement.src = fileUrl;
+                    mediaElement.controls = true;
+                    mediaElement.autoplay = true;
+                    mediaElement.className = 'w-full md:w-96 p-4 bg-gray-800 rounded-lg';
+                    
+                } else if (mimeType === 'application/pdf') {
+                    mediaElement = document.createElement('iframe');
+                    mediaElement.src = fileUrl;
+                    mediaElement.className = 'w-[90vw] h-[90vh] border-none'; 
+                    
+                } else {
+                     // File lain (ZIP, TXT, DLL) - tampilkan pesan
+                    contentDiv.innerHTML = `<p class="text-white text-lg p-5">Cannot display preview for **${fileName}** (${mimeType}). Please use the **Download Original** link.</p>`;
+                    imageModal.classList.remove('hidden');
+                    document.body.style.overflow = 'hidden';
+                    return; 
+                }
+                
+                if (mediaElement) {
+                    contentDiv.appendChild(mediaElement);
+                }
+
                 imageModal.classList.remove('hidden');
                 document.body.style.overflow = 'hidden';
+
             } catch (error) {
                 console.error('Error opening modal:', error);
             }
         }
 
-        // **PERBAIKAN: Hapus 'window.' dari definisi fungsi**
         function closeModal() {
             try {
                 const imageModal = document.getElementById('image-modal');
-                const modalImage = document.getElementById('modal-image');
+                const contentDiv = document.getElementById('media-preview-content');
                 
                 imageModal.classList.add('hidden');
-                modalImage.src = '';
+                // Hentikan pemutaran media saat modal ditutup
+                contentDiv.innerHTML = ''; 
                 document.body.style.overflow = '';
             } catch (error) {
                 console.error('Error closing modal:', error);
@@ -180,16 +248,15 @@
         // Close modal when clicking outside image
         document.addEventListener('click', function(e) {
             const imageModal = document.getElementById('image-modal');
-            // Pastikan kita mengklik background modal, bukan konten di dalamnya
             if (e.target === imageModal) { 
-                closeModal(); // Panggil fungsi tanpa 'window.'
+                closeModal(); 
             }
         });
 
         // Close modal with Escape key
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
-                closeModal(); // Panggil fungsi tanpa 'window.'
+                closeModal(); 
             }
         });
 
@@ -220,42 +287,11 @@
 
         const UPLOAD_API_ENDPOINT = '/api/upload-file';
         const CONFIG_API_ENDPOINT = '/api/get-firebase-config';
-        const MAX_FILE_SIZE = 5 * 1024 * 1024;
-
-        // ==================== FIREBASE INITIALIZATION ====================
         
-        async function initializeFirebase() {
-            try {
-                userInfoSpan.textContent = 'Fetching config...';
-                
-                const response = await fetch(CONFIG_API_ENDPOINT);
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch Firebase config. Status: ${response.status}`);
-                }
-                
-                const firebaseConfig = await response.json();
+        // PERBAIKAN BATAS UKURAN FILE: 5MB -> 50MB
+        const MAX_FILE_SIZE = 50 * 1024 * 1024; 
 
-                if (!firebase.apps.length) {
-                    firebase.initializeApp(firebaseConfig);
-                }
-                
-                database = firebase.database();
-                messagesRef = database.ref('messages');
-                userCountRef = database.ref('user_counter');
-
-                await getAnonymousId();
-                setupMessageListener();
-                updateSendButtonState();
-
-            } catch (error) {
-                console.error("Error initializing Firebase:", error);
-                userInfoSpan.textContent = 'Connection Failed! ⚠️';
-                uploadStatus.textContent = `Error: ${error.message}`;
-                uploadStatus.classList.remove('hidden');
-            }
-        }
-
-        // ==================== INDEXEDDB FOR PERSISTENT STORAGE (omitted for brevity, assume correct) ====================
+        // ==================== ANONYMOUS ID & FIREBASE (omitted for brevity, same as previous version) ====================
         
         function openIndexedDB() {
             return new Promise((resolve, reject) => {
@@ -282,7 +318,6 @@
                     request.onsuccess = () => resolve(request.result?.value || null);
                 });
             } catch (error) {
-                console.warn('IndexedDB read error:', error);
                 return null;
             }
         }
@@ -298,12 +333,9 @@
                     request.onsuccess = () => resolve(true);
                 });
             } catch (error) {
-                console.warn('IndexedDB write error:', error);
                 return false;
             }
         }
-
-        // ==================== ANONYMOUS ID MANAGEMENT ====================
         
         async function getAnonymousId() {
             if (anonymousId) {
@@ -330,15 +362,12 @@
                     return anonymousId;
                 }
             } catch (error) {
-                console.warn('Could not get numbered ID, using UUID:', error);
                 anonymousId = 'anon-' + generateUUID();
                 userInfoSpan.textContent = `You are ${anonymousId}`;
                 return anonymousId;
             }
         }
 
-        // ==================== MESSAGE LISTENER ====================
-        
         function setupMessageListener() {
             if (messageListener) {
                 messagesRef.off('child_added', messageListener);
@@ -352,7 +381,36 @@
             messagesRef.on('child_added', messageListener);
         }
 
-        // ==================== DISPLAY MESSAGE (PERHATIKAN BAGIAN INI) ====================
+        async function initializeFirebase() {
+            try {
+                userInfoSpan.textContent = 'Fetching config...';
+                const response = await fetch(CONFIG_API_ENDPOINT);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch Firebase config. Status: ${response.status}`);
+                }
+                const firebaseConfig = await response.json();
+
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(firebaseConfig);
+                }
+                
+                database = firebase.database();
+                messagesRef = database.ref('messages');
+                userCountRef = database.ref('user_counter');
+
+                await getAnonymousId();
+                setupMessageListener();
+                updateSendButtonState();
+
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+                userInfoSpan.textContent = 'Connection Failed! ⚠️';
+                uploadStatus.textContent = `Error: ${error.message}`;
+                uploadStatus.classList.remove('hidden');
+            }
+        }
+
+        // ==================== DISPLAY MESSAGE (REVISI LOGIKA PREVIEW) ====================
         
         function displayMessage(data) {
             if (!data || !data.name) return;
@@ -382,22 +440,58 @@
             
             if (data.fileUrl) {
                 const fileName = data.fileName || 'file_attachment';
-                const fileType = fileName.split('.').pop().toLowerCase();
+                const mimeType = getMimeType(fileName); // Dapatkan MIME type
                 
-                if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileType)) {
-                    // **PERBAIKAN KRUSIAL: Tambahkan EventListener pada img**
-                    const img = document.createElement('img');
-                    img.src = data.fileUrl;
-                    img.alt = 'Image attachment';
-                    img.className = 'message-image'; 
+                const isPreviewable = mimeType.startsWith('image/') || 
+                                      mimeType.startsWith('video/') || 
+                                      mimeType.startsWith('audio/') || 
+                                      mimeType === 'application/pdf';
+                
+                if (isPreviewable) {
+                    // Elemen yang bisa diklik untuk membuka modal
+                    const previewElement = document.createElement('div');
+                    previewElement.className = 'max-w-40 max-h-40 rounded cursor-pointer mt-2 overflow-hidden border border-white/20 relative group';
+                    previewElement.style.backgroundColor = 'rgba(255,255,255,0.05)';
+
+                    // Ikon Play/Preview di tengah
+                    previewElement.innerHTML = `
+                        <div class="absolute inset-0 flex items-center justify-center bg-black/50 group-hover:bg-black/70 transition-all z-10">
+                            <i class="fa-solid fa-expand text-white text-3xl"></i>
+                        </div>
+                    `;
                     
-                    img.addEventListener('click', function(e) {
+                    // Khusus untuk gambar, tambahkan thumbnail
+                    if (mimeType.startsWith('image/')) {
+                        const img = document.createElement('img');
+                        img.src = data.fileUrl;
+                        img.alt = 'Thumbnail';
+                        img.className = 'w-full h-full object-cover transition-opacity duration-300 group-hover:opacity-50';
+                        previewElement.appendChild(img);
+                    } else {
+                        // Untuk media/dokumen lain, tampilkan ikon file
+                        let iconClass = 'fa-solid ';
+                        if (mimeType.startsWith('video/')) iconClass += 'fa-video text-red-400';
+                        else if (mimeType.startsWith('audio/')) iconClass += 'fa-music text-purple-400';
+                        else if (mimeType === 'application/pdf') iconClass += 'fa-file-pdf text-red-600';
+                        else iconClass += 'fa-file-export text-gray-400';
+                        
+                        previewElement.innerHTML += `
+                            <div class="w-full h-full flex items-center justify-center">
+                                <i class="${iconClass} text-5xl"></i>
+                            </div>
+                        `;
+                    }
+
+                    // Event listener untuk membuka modal
+                    previewElement.addEventListener('click', function(e) {
                         e.stopPropagation();
-                        openModal(data.fileUrl); // Panggil fungsi tanpa 'window.'
+                        openModal(data.fileUrl, mimeType, fileName); 
                     });
                     
-                    bubbleElement.appendChild(img);
+                    bubbleElement.appendChild(previewElement);
+
                 } else {
+                    // File attachment (non-previewable)
                     const fileElement = document.createElement('p');
                     fileElement.className = 'text-xs mt-1';
                     const link = document.createElement('a');
@@ -405,7 +499,8 @@
                     link.target = '_blank';
                     link.className = 'underline text-yellow-400';
                     link.textContent = fileName;
-                    fileElement.innerHTML = '<i class="fa-solid fa-file mr-1"></i>File: ';
+                    // Asumsi fileSize tidak disimpan. Jika disimpan, tambahkan: (${formatBytes(data.fileSize || 0)})
+                    fileElement.innerHTML = `<i class="fa-solid fa-file mr-1"></i>File: `;
                     fileElement.appendChild(link);
                     bubbleElement.appendChild(fileElement);
                 }
@@ -417,9 +512,10 @@
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
 
-        // ==================== FILE UPLOAD ====================
+        // ==================== FILE UPLOAD (MENGGUNAKAN MAX_FILE_SIZE BARU) ====================
         
         async function uploadFileToApi(file) {
+            // ... (Kode uploadFileToApi sama, hanya menggunakan MAX_FILE_SIZE = 50MB) ...
             if (!file) return null;
 
             if (file.size > MAX_FILE_SIZE) {
@@ -489,16 +585,14 @@
             });
         }
 
-        // ==================== BUTTON STATE MANAGEMENT ====================
-        
+        // ==================== BUTTON STATE MANAGEMENT & EVENT LISTENERS (same as previous version) ====================
+
         function updateSendButtonState() {
             const hasText = messageInput.value.trim() !== '';
             const hasFile = fileUpload.files.length > 0;
             sendButton.disabled = !(hasText || hasFile) || pendingFileUrl;
         }
 
-        // ==================== EVENT LISTENERS ====================
-        
         uploadButton.addEventListener('click', () => {
             fileUpload.click();
         });
@@ -580,7 +674,9 @@
                     text: messageText || '',
                     timestamp: firebase.database.ServerValue.TIMESTAMP, 
                     fileUrl: fileUrl,
-                    fileName: file ? file.name : null
+                    fileName: file ? file.name : null,
+                    // Tambahkan file size saat upload berhasil
+                    fileSize: file ? file.size : null
                 };
 
                 try {
