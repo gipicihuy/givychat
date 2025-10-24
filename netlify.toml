@@ -1,0 +1,10 @@
+[build]
+  # Lokasi di mana Netlify akan mencari fungsi serverless
+  functions = "netlify/functions"
+
+[[redirects]]
+  # Jika frontend memanggil /api/X (di index.html)
+  from = "/api/*"
+  # Netlify akan mengarahkannya ke /.netlify/functions/X
+  to = "/.netlify/functions/:splat"
+  status = 200
