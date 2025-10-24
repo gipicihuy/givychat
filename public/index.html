@@ -50,6 +50,8 @@
             border-radius: 8px;
             cursor: pointer;
             transition: opacity 0.2s ease;
+            display: block;
+            margin-top: 8px;
         }
         .message-image:hover {
             opacity: 0.8;
@@ -107,7 +109,7 @@
         <div class="relative max-w-full max-h-full">
             <img id="modal-image" src="" alt="Image Preview" class="max-w-full max-h-[90vh] object-contain">
             
-            <button class="absolute top-4 right-4 text-white text-3xl hover:text-gray-400" title="Close" onclick="closeModal()">
+            <button type="button" class="absolute top-4 right-4 text-white text-3xl hover:text-gray-400" title="Close" onclick="window.closeModal()">
                 <i class="fa-solid fa-xmark"></i>
             </button>
             
@@ -118,6 +120,80 @@
     </div>
 
     <script>
+        // ==================== UTILITY FUNCTIONS ====================
+        
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        // Sanitize HTML - prevent XSS
+        function sanitizeHTML(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Generate UUID for fallback anonymous ID
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                const r = Math.random() * 16 | 0;
+                const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        // ==================== MODAL FUNCTIONS ====================
+        
+        window.openModal = function(imageUrl) {
+            try {
+                const modalImage = document.getElementById('modal-image');
+                const modalDownloadLink = document.getElementById('modal-download-link');
+                const imageModal = document.getElementById('image-modal');
+                
+                modalImage.src = imageUrl;
+                modalDownloadLink.href = imageUrl;
+                imageModal.classList.remove('hidden');
+                document.body.style.overflow = 'hidden';
+            } catch (error) {
+                console.error('Error opening modal:', error);
+            }
+        };
+
+        window.closeModal = function() {
+            try {
+                const imageModal = document.getElementById('image-modal');
+                const modalImage = document.getElementById('modal-image');
+                
+                imageModal.classList.add('hidden');
+                modalImage.src = '';
+                document.body.style.overflow = '';
+            } catch (error) {
+                console.error('Error closing modal:', error);
+            }
+        };
+
+        // Close modal when clicking outside image
+        document.addEventListener('click', function(e) {
+            const imageModal = document.getElementById('image-modal');
+            if (e.target === imageModal) {
+                window.closeModal();
+            }
+        });
+
+        // Close modal with Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                window.closeModal();
+            }
+        });
+
+        // ==================== FIREBASE & STATE ====================
+        
         const messageForm = document.getElementById('message-form');
         const messageInput = document.getElementById('message-input');
         const messagesDiv = document.getElementById('messages');
@@ -134,60 +210,26 @@
         const cancelUploadButton = document.getElementById('cancel-upload');
         const loadingBar = document.getElementById('loading-bar');
         
-        const imageModal = document.getElementById('image-modal');
-        const modalImage = document.getElementById('modal-image');
-        const modalDownloadLink = document.getElementById('modal-download-link');
-        
         let database;
         let messagesRef;
         let userCountRef;
-        let anonymousId = localStorage.getItem('anonymous_id');
+        let messageListener = null; // FIX #6: Store listener reference
+        let anonymousId = localStorage.getItem('anonymous_id') || null;
+        let pendingFileUrl = null; // Track if upload is in progress
+
         const UPLOAD_API_ENDPOINT = '/api/upload-file';
         const CONFIG_API_ENDPOINT = '/api/get-firebase-config';
         const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
-        function formatBytes(bytes, decimals = 2) {
-            if (bytes === 0) return '0 Bytes';
-            const k = 1024;
-            const dm = decimals < 0 ? 0 : decimals;
-            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-        }
-
-        window.openModal = function(imageUrl) {
-            modalImage.src = imageUrl;
-            modalDownloadLink.href = imageUrl;
-            imageModal.classList.remove('hidden');
-            document.body.style.overflow = 'hidden';
-        }
-
-        window.closeModal = function() {
-            imageModal.classList.add('hidden');
-            modalImage.src = '';
-            document.body.style.overflow = '';
-        }
-
-        imageModal.addEventListener('click', function(e) {
-            if (e.target === imageModal) {
-                closeModal();
-            }
-        });
+        // ==================== FIREBASE INITIALIZATION ====================
         
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                closeModal();
-            }
-        });
-
         async function initializeFirebase() {
             try {
                 userInfoSpan.textContent = 'Fetching config...';
                 
                 const response = await fetch(CONFIG_API_ENDPOINT);
                 if (!response.ok) {
-                    const errorDetails = await response.text();
-                    throw new Error(`Failed to fetch Firebase config. Status: ${response.status}. Details: ${errorDetails.substring(0, 50)}...`);
+                    throw new Error(`Failed to fetch Firebase config. Status: ${response.status}`);
                 }
                 
                 const firebaseConfig = await response.json();
@@ -200,94 +242,148 @@
                 messagesRef = database.ref('messages');
                 userCountRef = database.ref('user_counter');
 
-                sendButton.disabled = (messageInput.value.trim() === '' && !fileUpload.files[0]);
-                
                 await getAnonymousId();
                 setupMessageListener();
+                updateSendButtonState();
 
             } catch (error) {
                 console.error("Error initializing Firebase:", error);
                 userInfoSpan.textContent = 'Connection Failed! ⚠️';
-                uploadStatus.textContent = `Error: Cannot connect. Details: ${error.message}`;
+                uploadStatus.textContent = `Error: ${error.message}`;
                 uploadStatus.classList.remove('hidden');
             }
         }
 
+        // ==================== ANONYMOUS ID MANAGEMENT ====================
+        
         async function getAnonymousId() {
             if (anonymousId) {
                 userInfoSpan.textContent = `You are Anonymous #${anonymousId}`;
                 return anonymousId;
             }
 
-            const snapshot = await userCountRef.transaction((currentCount) => {
-                return (currentCount || 0) + 1;
-            });
+            try {
+                const snapshot = await userCountRef.transaction((currentCount) => {
+                    return (currentCount || 0) + 1;
+                });
 
-            if (snapshot.committed) {
-                anonymousId = snapshot.snapshot.val();
-                localStorage.setItem('anonymous_id', anonymousId); 
-                userInfoSpan.textContent = `You are Anonymous #${anonymousId}`;
+                if (snapshot.committed) {
+                    anonymousId = snapshot.snapshot.val();
+                    localStorage.setItem('anonymous_id', anonymousId);
+                    userInfoSpan.textContent = `You are Anonymous #${anonymousId}`;
+                    return anonymousId;
+                }
+            } catch (error) {
+                console.warn('Could not get numbered ID, using UUID:', error);
+                // FIX #5: Fallback to UUID if localStorage fails
+                anonymousId = 'anon-' + generateUUID();
+                userInfoSpan.textContent = `You are ${anonymousId}`;
                 return anonymousId;
             }
         }
 
+        // ==================== MESSAGE LISTENER ====================
+        
         function setupMessageListener() {
-            messagesRef.on('child_added', (snapshot) => {
+            // FIX #6: Remove old listener if exists
+            if (messageListener) {
+                messagesRef.off('child_added', messageListener);
+            }
+
+            messageListener = function(snapshot) {
                 const message = snapshot.val();
                 displayMessage(message);
-            });
+            };
+
+            messagesRef.on('child_added', messageListener);
         }
 
+        // ==================== DISPLAY MESSAGE ====================
+        
         function displayMessage(data) {
+            if (!data || !data.name) return;
+
             const messageElement = document.createElement('div');
             messageElement.className = 'flex flex-col';
             
             const isSelf = data.anonymousId == anonymousId;
-
             const nameClass = isSelf ? 'text-blue-400 font-bold' : 'text-gray-400';
             const bubbleClass = isSelf ? 'self-end bg-blue-900/40' : 'self-start bg-white/10';
             
             const time = data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : '...';
 
-            let contentHTML = data.text ? `<p class="text-sm">${data.text}</p>` : '';
+            // Create name element
+            const nameElement = document.createElement('span');
+            nameElement.className = `text-xs ${nameClass} mb-1`;
+            nameElement.innerHTML = `${sanitizeHTML(data.name)} <span class="text-gray-500 text-xs">(${time})</span>`;
+
+            // Create bubble
+            const bubbleElement = document.createElement('div');
+            bubbleElement.className = `message-bubble ${bubbleClass} max-w-[85%]`;
+
+            // FIX #4: Sanitize text content - prevent XSS
+            if (data.text) {
+                const textElement = document.createElement('p');
+                textElement.className = 'text-sm';
+                textElement.textContent = data.text; // Use textContent, not innerHTML
+                bubbleElement.appendChild(textElement);
+            }
             
+            // Handle file attachments
             if (data.fileUrl) {
                 const fileName = data.fileName || 'file_attachment';
                 const fileType = fileName.split('.').pop().toLowerCase();
                 
                 if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileType)) {
-                    contentHTML += `<img src="${data.fileUrl}" 
-                                      class="message-image mt-2" 
-                                      alt="Image File" 
-                                      onclick="window.openModal('${data.fileUrl}')">`;
+                    // FIX #2: Use createElement to avoid template literal injection
+                    const img = document.createElement('img');
+                    img.src = data.fileUrl;
+                    img.alt = 'Image attachment';
+                    img.className = 'message-image';
+                    img.onclick = function(e) {
+                        e.stopPropagation();
+                        window.openModal(data.fileUrl);
+                    };
+                    bubbleElement.appendChild(img);
                 } else {
-                    contentHTML += `<p class="text-xs mt-1"><i class="fa-solid fa-file mr-1"></i>File: <a href="${data.fileUrl}" target="_blank" class="underline text-yellow-400">${fileName}</a></p>`;
+                    // File attachment (non-image)
+                    const fileElement = document.createElement('p');
+                    fileElement.className = 'text-xs mt-1';
+                    const link = document.createElement('a');
+                    link.href = data.fileUrl;
+                    link.target = '_blank';
+                    link.className = 'underline text-yellow-400';
+                    link.textContent = fileName;
+                    fileElement.innerHTML = '<i class="fa-solid fa-file mr-1"></i>File: ';
+                    fileElement.appendChild(link);
+                    bubbleElement.appendChild(fileElement);
                 }
             }
 
-            messageElement.innerHTML = `
-                <span class="text-xs ${nameClass} mb-1">${data.name} <span class="text-gray-500 text-xs">(${time})</span></span>
-                <div class="message-bubble ${bubbleClass} max-w-[85%]">
-                    ${contentHTML}
-                </div>
-            `;
+            messageElement.appendChild(nameElement);
+            messageElement.appendChild(bubbleElement);
             messagesDiv.appendChild(messageElement);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight; 
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
 
+        // ==================== FILE UPLOAD ====================
+        
         async function uploadFileToApi(file) {
+            if (!file) return null;
+
             if (file.size > MAX_FILE_SIZE) {
-                uploadStatus.textContent = 'File size too large (max 5MB)!';
+                uploadStatus.textContent = `File size too large (max ${formatBytes(MAX_FILE_SIZE)})!`;
                 uploadStatus.classList.remove('hidden');
                 return null;
             }
 
-            uploadStatus.textContent = 'Uploading... (Do not navigate away)';
+            uploadStatus.textContent = 'Uploading...';
             uploadStatus.classList.remove('hidden');
-            loadingBar.style.width = '10%'; 
+            loadingBar.style.width = '10%';
+            pendingFileUrl = true;
 
             const loadingInterval = setInterval(() => {
-                let currentWidth = parseInt(loadingBar.style.width);
+                const currentWidth = parseInt(loadingBar.style.width);
                 if (currentWidth < 90) {
                     loadingBar.style.width = `${currentWidth + 5}%`;
                 }
@@ -305,28 +401,31 @@
                     body: JSON.stringify({ file: base64 })
                 });
 
-                clearInterval(loadingInterval);
-
                 const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.details || `Upload failed with status ${response.status}`);
+                }
 
                 if (data.success && data.url) {
                     loadingBar.style.width = '100%';
                     fileUrl = data.url;
-                    uploadStatus.textContent = 'Upload complete! Preparing to send message.';
-                    
+                    uploadStatus.textContent = 'Upload complete!';
                 } else {
-                    throw new Error(data.details || 'Upload failed at the server.');
+                    throw new Error(data.details || 'Upload failed - no URL returned');
                 }
 
             } catch (error) {
-                clearInterval(loadingInterval);
-                loadingBar.style.width = '0%';
                 console.error('Upload error:', error);
+                loadingBar.style.width = '0%';
                 uploadStatus.textContent = `Upload failed: ${error.message}`;
             } finally {
+                clearInterval(loadingInterval);
                 filePreviewArea.classList.add('hidden');
+                pendingFileUrl = false;
                 setTimeout(() => uploadStatus.classList.add('hidden'), 3000);
             }
+            
             return fileUrl;
         }
 
@@ -339,89 +438,119 @@
             });
         }
 
-        uploadButton.addEventListener('click', () => fileUpload.click());
+        // ==================== BUTTON STATE MANAGEMENT ====================
+        
+        function updateSendButtonState() {
+            const hasText = messageInput.value.trim() !== '';
+            const hasFile = fileUpload.files.length > 0;
+            sendButton.disabled = !(hasText || hasFile) || pendingFileUrl;
+        }
+
+        // ==================== EVENT LISTENERS ====================
+        
+        uploadButton.addEventListener('click', () => {
+            fileUpload.click();
+        });
 
         messageInput.addEventListener('input', () => {
-            sendButton.disabled = (messageInput.value.trim() === '' && !fileUpload.files[0]);
+            updateSendButtonState();
         });
 
         fileUpload.addEventListener('change', (e) => {
             const file = e.target.files[0];
-            if (file) {
-                if (file.size > MAX_FILE_SIZE) {
-                     alert(`File terlalu besar. Batas maksimum: ${formatBytes(MAX_FILE_SIZE)}.`);
-                     fileUpload.value = '';
-                     return;
-                }
-                
-                filePreviewArea.classList.remove('hidden');
-                previewFilename.textContent = file.name;
-                previewFilesize.textContent = `(${formatBytes(file.size)})`;
-
-                const type = file.type.split('/')[0];
-                if (type === 'image') {
-                    previewIcon.className = 'fa-solid fa-image text-green-400';
-                } else if (type === 'video') {
-                    previewIcon.className = 'fa-solid fa-video text-red-400';
-                } else if (type === 'audio') {
-                    previewIcon.className = 'fa-solid fa-music text-purple-400';
-                } else {
-                    previewIcon.className = 'fa-solid fa-file text-gray-400';
-                }
-
-                sendButton.disabled = false;
-            } else {
+            
+            if (!file) {
                 filePreviewArea.classList.add('hidden');
-                if (!messageInput.value.trim()) {
-                    sendButton.disabled = true;
-                }
+                updateSendButtonState();
+                return;
             }
+
+            // FIX #9: Validate file size before showing preview
+            if (file.size > MAX_FILE_SIZE) {
+                alert(`File terlalu besar. Batas maksimum: ${formatBytes(MAX_FILE_SIZE)}.`);
+                fileUpload.value = '';
+                updateSendButtonState();
+                return;
+            }
+            
+            filePreviewArea.classList.remove('hidden');
+            previewFilename.textContent = file.name;
+            previewFilesize.textContent = `(${formatBytes(file.size)})`;
+
+            const type = file.type.split('/')[0];
+            if (type === 'image') {
+                previewIcon.className = 'fa-solid fa-image text-green-400';
+            } else if (type === 'video') {
+                previewIcon.className = 'fa-solid fa-video text-red-400';
+            } else if (type === 'audio') {
+                previewIcon.className = 'fa-solid fa-music text-purple-400';
+            } else {
+                previewIcon.className = 'fa-solid fa-file text-gray-400';
+            }
+
+            updateSendButtonState();
         });
 
         cancelUploadButton.addEventListener('click', () => {
             fileUpload.value = '';
             filePreviewArea.classList.add('hidden');
             loadingBar.style.width = '0%';
-            if (!messageInput.value.trim()) {
-                sendButton.disabled = true;
-            }
+            updateSendButtonState();
         });
 
         messageForm.addEventListener('submit', async (e) => {
             e.preventDefault();
+
             const messageText = messageInput.value.trim();
             const file = fileUpload.files[0];
-            let fileUrl = null;
 
+            // FIX #10: Don't send if both empty or upload in progress
             if (!messageText && !file) return;
+            if (pendingFileUrl) return;
 
             messageInput.disabled = true;
             sendButton.disabled = true;
             
+            let fileUrl = null;
+            
             if (file) {
                 fileUrl = await uploadFileToApi(file);
-                fileUpload.value = ''; 
+                // FIX #10: Only send message if upload successful OR message has text
+                if (!fileUrl && !messageText) {
+                    messageInput.disabled = false;
+                    updateSendButtonState();
+                    return;
+                }
+                fileUpload.value = '';
             }
 
             if (messageText || fileUrl) {
                 const newMessage = {
                     name: `Anonymous #${anonymousId}`,
                     anonymousId: anonymousId,
-                    text: messageText,
+                    text: messageText || '',
                     timestamp: firebase.database.ServerValue.TIMESTAMP, 
                     fileUrl: fileUrl,
                     fileName: file ? file.name : null
                 };
 
-                await messagesRef.push(newMessage);
-                messageInput.value = ''; 
+                try {
+                    await messagesRef.push(newMessage);
+                } catch (error) {
+                    console.error('Error sending message:', error);
+                    uploadStatus.textContent = 'Failed to send message';
+                    uploadStatus.classList.remove('hidden');
+                }
             }
             
+            messageInput.value = '';
             messageInput.disabled = false;
-            sendButton.disabled = (messageInput.value.trim() === '' && !fileUpload.files[0]);
+            filePreviewArea.classList.add('hidden');
+            updateSendButtonState();
             messageInput.focus();
         });
 
+        // ==================== INITIALIZE ====================
         initializeFirebase();
     </script>
 </body>
