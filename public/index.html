@@ -102,7 +102,11 @@
                 
                 // Ambil konfigurasi dari API serverless
                 const response = await fetch(CONFIG_API_ENDPOINT);
-                if (!response.ok) throw new Error("Failed to fetch Firebase config.");
+                if (!response.ok) {
+                    // Coba baca body error dari fungsi Netlify
+                    const errorDetails = await response.text();
+                    throw new Error(`Failed to fetch Firebase config. Status: ${response.status}. Details: ${errorDetails.substring(0, 50)}...`);
+                }
                 
                 const firebaseConfig = await response.json();
 
@@ -123,8 +127,7 @@
             } catch (error) {
                 console.error("Error initializing Firebase:", error);
                 userInfoSpan.textContent = 'Connection Failed! ⚠️';
-                // Tampilkan error ke pengguna
-                uploadStatus.textContent = "Error: Cannot connect to chat. Check console.";
+                uploadStatus.textContent = `Error: Cannot connect. Details: ${error.message}`;
                 uploadStatus.classList.remove('hidden');
             }
         }
@@ -138,7 +141,6 @@
 
             // Transaksi untuk mendapatkan ID baru secara atomik
             const snapshot = await userCountRef.transaction((currentCount) => {
-                // Tambahkan 1 ke counter yang ada, atau mulai dari 1
                 return (currentCount || 0) + 1;
             });
 
@@ -193,4 +195,96 @@
             `;
             messagesDiv.appendChild(messageElement);
             // Scroll ke bawah
-            messagesDiv.
+            messagesDiv.scrollTop = messagesDiv.scrollHeight; 
+        }
+
+        // --- 5. Logika Unggah File ke API Serverless ---
+        async function uploadFileToApi(file) {
+            if (file.size > 5 * 1024 * 1024) { // Batas 5MB
+                uploadStatus.textContent = 'File size too large (max 5MB)!';
+                uploadStatus.classList.remove('hidden');
+                return null;
+            }
+
+            uploadStatus.textContent = 'Uploading... (Do not navigate away)';
+            uploadStatus.classList.remove('hidden');
+
+            try {
+                // Konversi file ke format Base64 yang dapat dikirim
+                const base64 = await fileToBase64(file);
+                
+                const response = await fetch(UPLOAD_API_ENDPOINT, { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ file: base64 })
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.url) {
+                    uploadStatus.textContent = 'Upload complete! Preparing to send message.';
+                    setTimeout(() => uploadStatus.classList.add('hidden'), 2000);
+                    return data.url;
+                } else {
+                    throw new Error(data.details || 'Upload failed at the server.');
+                }
+
+            } catch (error) {
+                console.error('Upload error:', error);
+                uploadStatus.textContent = `Upload failed: ${error.message}`;
+                return null;
+            }
+        }
+
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        // --- 6. Event Listeners ---
+        uploadButton.addEventListener('click', () => fileUpload.click());
+
+        messageForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const messageText = messageInput.value.trim();
+            const file = fileUpload.files[0];
+            let fileUrl = null;
+
+            if (!messageText && !file) return;
+
+            messageInput.disabled = true;
+            sendButton.disabled = true;
+            
+            if (file) {
+                fileUrl = await uploadFileToApi(file);
+                fileUpload.value = ''; // Reset input file setelah digunakan
+            }
+
+            if (messageText || fileUrl) {
+                const newMessage = {
+                    name: `Anonymous #${anonymousId}`,
+                    anonymousId: anonymousId,
+                    text: messageText,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP, 
+                    fileUrl: fileUrl,
+                    fileName: file ? file.name : null
+                };
+
+                await messagesRef.push(newMessage);
+                messageInput.value = ''; 
+            }
+            
+            messageInput.disabled = false;
+            sendButton.disabled = false;
+            messageInput.focus();
+        });
+
+        // Mulai proses
+        initializeFirebase();
+    </script>
+</body>
+</html>
