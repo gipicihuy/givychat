@@ -1,4 +1,6 @@
-// Anda harus mengubah header file ini menjadi:
+// File: /netlify/functions/upload-file.js
+
+// Gunakan CommonJS require() untuk Netlify Functions
 const fetch = require('node-fetch');
 const FormData = require('form-data');
 
@@ -8,19 +10,15 @@ exports.handler = async (event, context) => {
     }
 
     try {
-        // --- PERHATIKAN BAGIAN INI: Parsing event.body ---
         let body;
         if (event.body) {
-            // Netlify Functions sering mengirimkan body sebagai string Base64 jika data asalnya binary.
-            // Namun, karena frontend Anda mengirim JSON (file: base64string), kita asumsikan event.body adalah JSON string.
-            // Coba parsing JSON dari body
+            // Netlify Functions membaca body POST
             body = JSON.parse(event.body);
         } else {
             return { statusCode: 400, body: JSON.stringify({ error: 'No request body received' }) };
         }
-        // --- AKHIR BAGIAN KRUSIAL ---
         
-        const { file } = body; // Ambil properti 'file' dari body yang sudah di-parse
+        const { file } = body; 
 
         if (!file) {
              return { statusCode: 400, body: JSON.stringify({ error: 'No file provided in the request body' }) };
@@ -33,9 +31,10 @@ exports.handler = async (event, context) => {
         }
         
         const contentType = matches[1];
+        // Pastikan event.isBase64Encoded adalah true jika data base64 tidak di-decode otomatis
+        // Dalam kasus ini, kita mengandalkan JSON.parse dan Buffer.from untuk menangani string Base64.
         const fileBuffer = Buffer.from(matches[2], 'base64');
         
-        // Buat nama file unik, dsb...
         const fileExtension = contentType.split('/')[1] || 'bin';
         const fileName = `anon_upload_${Date.now()}.${fileExtension}`;
 
@@ -45,21 +44,19 @@ exports.handler = async (event, context) => {
             contentType: contentType
         });
 
-        // Pengaturan headers untuk FormData agar boundary terkirim
+        // Kirim ke Qu.ax
         const response = await fetch('https://qu.ax/upload.php', {
             method: 'POST',
             body: formData,
             headers: formData.getHeaders()
         });
         
-        // ... (Sisa logika penanganan response Qu.ax) ...
-
         if (!response.ok) {
             const errorText = await response.text();
             throw new Error(`Upload failed at Qu.ax: ${response.status} - ${errorText.substring(0, 100)}`);
         }
 
-        const quaxData = await response.json(); // Gunakan nama variabel berbeda untuk menghindari konflik
+        const quaxData = await response.json();
 
         if (quaxData.success && quaxData.files && quaxData.files.length > 0) {
             return {
