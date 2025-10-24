@@ -6,16 +6,19 @@
     <title>Anonymous Chat - #chat</title>
     <link href="https://fonts.googleapis.com/css2?family=Cousine:wght@400;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c9QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer"/>
     
     <style>
         body {
             font-family: 'Cousine', monospace;
             background-color: #000;
+            /* Pastikan body setinggi layar penuh */
+            height: 100vh;
         }
         .chat-container {
             max-width: 600px;
-            height: 100vh;
+            /* Hapus height: 100vh; karena sudah dihandle oleh h-full di HTML dan Flexbox */
+            /* Menggunakan h-full di HTML */
         }
         .form-input {
             background-color: rgba(255,255,255,.1);
@@ -38,8 +41,7 @@
         }
         #messages {
             overflow-y: auto;
-            max-height: calc(100vh - 120px); 
-            height: 100%;
+            /* Hapus max-height atau tinggi tetap, biarkan flex-1 yang mengatur */
             scroll-behavior: smooth;
         }
         #messages::-webkit-scrollbar { width: 6px; }
@@ -59,6 +61,7 @@
             opacity: 0.8;
         }
 
+        /* Style untuk media dalam modal */
         #media-preview-content img,
         #media-preview-content video {
             max-width: 100%;
@@ -74,9 +77,10 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 </head>
-<body class="p-0 text-white min-h-screen flex justify-center">
 
-    <div class="chat-container flex flex-col mx-auto">
+<body class="p-0 text-white h-screen flex justify-center">
+
+    <div class="chat-container flex flex-col mx-auto h-full">
         <div class="p-4 border-b border-white/10 flex items-center justify-between sticky top-0 bg-black z-10">
             <h1 class="text-xl font-bold tracking-wider text-white">#chat</h1>
             <span id="user-info" class="text-sm text-gray-400">Connecting...</span>
@@ -98,10 +102,9 @@
             </div>
         </div>
 
-        <!-- PERBAIKAN: Ganti pb-24 jadi pb-4 -->
-        <div id="messages" class="flex-1 p-4 space-y-4 pb-4"></div>
+        <div id="messages" class="flex-1 p-4 space-y-4"></div>
 
-        <div class="p-4 border-t border-white/10 fixed bottom-0 left-1/2 transform -translate-x-1/2 bg-black z-10 w-full max-w-[600px]">
+        <div class="p-4 border-t border-white/10 bg-black z-10 w-full max-w-[600px] mx-auto">
             <form id="message-form" class="flex space-x-2">
                 
                 <input type="file" id="file-upload" accept="image/*,video/*,audio/*,.pdf,.txt" class="hidden">
@@ -110,9 +113,9 @@
                 </button>
 
                 <input type="text" id="message-input" 
-                       placeholder="Type a message..." 
-                       class="form-input flex-1 py-3 px-4 text-sm"
-                       autocomplete="off">
+                        placeholder="Type a message..." 
+                        class="form-input flex-1 py-3 px-4 text-sm"
+                        autocomplete="off">
                 
                 <button type="submit" id="send-button" class="bg-white/10 text-white p-3 hover:bg-white/20 transition-colors" disabled>
                     <i class="fa-solid fa-paper-plane"></i>
@@ -125,7 +128,7 @@
     <div id="image-modal" class="fixed inset-0 bg-black bg-opacity-90 z-50 hidden flex justify-center items-center p-4">
         <div class="relative max-w-full max-h-full">
             <div id="media-preview-content" class="max-w-full max-h-[90vh] flex justify-center items-center">
-            </div>
+                </div>
             
             <button type="button" class="absolute top-4 right-4 text-white text-3xl hover:text-gray-400" title="Close" onclick="closeModal()">
                 <i class="fa-solid fa-xmark"></i>
@@ -174,18 +177,6 @@
             return types[ext] || 'application/octet-stream';
         }
 
-        // PERBAIKAN: Fungsi scroll ke bawah yang lebih reliable
-        function scrollToBottom(smooth = true) {
-            const messagesDiv = document.getElementById('messages');
-            if (smooth) {
-                messagesDiv.scrollTo({
-                    top: messagesDiv.scrollHeight,
-                    behavior: 'smooth'
-                });
-            } else {
-                messagesDiv.scrollTop = messagesDiv.scrollHeight;
-            }
-        }
 
         // ==================== MODAL FUNCTIONS ====================
         
@@ -227,6 +218,7 @@
                     mediaElement.className = 'w-[90vw] h-[90vh] border-none'; 
                     
                 } else {
+                     // File lain (ZIP, TXT, DLL) - tampilkan pesan
                     contentDiv.innerHTML = `<p class="text-white text-lg p-5">Cannot display preview for **${fileName}** (${mimeType}). Please use the **Download Original** link.</p>`;
                     imageModal.classList.remove('hidden');
                     document.body.style.overflow = 'hidden';
@@ -251,6 +243,7 @@
                 const contentDiv = document.getElementById('media-preview-content');
                 
                 imageModal.classList.add('hidden');
+                // Hentikan pemutaran media saat modal ditutup
                 contentDiv.innerHTML = ''; 
                 document.body.style.overflow = '';
             } catch (error) {
@@ -258,6 +251,7 @@
             }
         }
 
+        // Close modal when clicking outside image
         document.addEventListener('click', function(e) {
             const imageModal = document.getElementById('image-modal');
             if (e.target === imageModal) { 
@@ -265,6 +259,7 @@
             }
         });
 
+        // Close modal with Escape key
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
                 closeModal(); 
@@ -295,13 +290,14 @@
         let messageListener = null;
         let anonymousId = null;
         let pendingFileUrl = false;
-        let isInitialLoad = true; // PERBAIKAN: Flag untuk load pertama kali
 
         const UPLOAD_API_ENDPOINT = '/api/upload-file';
         const CONFIG_API_ENDPOINT = '/api/get-firebase-config';
+        
+        // BATAS UKURAN FILE: 6MB
         const MAX_FILE_SIZE = 6 * 1024 * 1024; 
 
-        // ==================== ANONYMOUS ID & FIREBASE ====================
+        // ==================== ANONYMOUS ID & FIREBASE (omitted for brevity, same as previous version) ====================
         
         function openIndexedDB() {
             return new Promise((resolve, reject) => {
@@ -386,23 +382,9 @@
             messageListener = function(snapshot) {
                 const message = snapshot.val();
                 displayMessage(message);
-                
-                // PERBAIKAN: Scroll otomatis ke bawah
-                // Untuk load pertama: scroll langsung tanpa smooth
-                // Untuk pesan baru: scroll smooth
-                if (isInitialLoad) {
-                    scrollToBottom(false);
-                } else {
-                    scrollToBottom(true);
-                }
             };
 
             messagesRef.on('child_added', messageListener);
-            
-            // PERBAIKAN: Set flag setelah semua pesan awal dimuat
-            setTimeout(() => {
-                isInitialLoad = false;
-            }, 1000);
         }
 
         async function initializeFirebase() {
@@ -434,7 +416,7 @@
             }
         }
 
-        // ==================== DISPLAY MESSAGE ====================
+        // ==================== DISPLAY MESSAGE (FINAL) ====================
         
         function displayMessage(data) {
             if (!data || !data.name) return;
@@ -462,6 +444,7 @@
                 bubbleElement.appendChild(textElement);
             }
             
+            // Handle file attachments
             if (data.fileUrl) {
                 const fileName = data.fileName || 'file_attachment';
                 const mimeType = getMimeType(fileName); 
@@ -472,22 +455,26 @@
                                       mimeType === 'application/pdf';
                 
                 if (isPreviewable) {
+                    // --- MEDIA YANG DAPAT DI-PREVIEW (IMAGE, VIDEO, AUDIO, PDF) ---
                     const previewElement = document.createElement('div');
                     previewElement.className = 'max-w-40 max-h-40 rounded cursor-pointer mt-2 overflow-hidden border border-white/20 relative group';
                     previewElement.style.backgroundColor = 'rgba(255,255,255,0.05)';
 
+                    // Tentukan ikon berdasarkan tipe file
                     let iconClass = 'fa-solid ';
                     if (mimeType.startsWith('image/')) iconClass = 'fa-solid fa-expand';
                     else if (mimeType.startsWith('video/')) iconClass = 'fa-solid fa-circle-play';
                     else if (mimeType.startsWith('audio/')) iconClass = 'fa-solid fa-volume-high';
                     else if (mimeType === 'application/pdf') iconClass = 'fa-solid fa-file-pdf';
 
+                    // Ikon Play/Preview di tengah
                     previewElement.innerHTML = `
                         <div class="absolute inset-0 flex items-center justify-center bg-black/50 group-hover:bg-black/70 transition-all z-10">
                             <i class="${iconClass} text-white text-3xl"></i>
                         </div>
                     `;
                     
+                    // Khusus untuk gambar, tambahkan thumbnail
                     if (mimeType.startsWith('image/')) {
                         const img = document.createElement('img');
                         img.src = data.fileUrl;
@@ -495,6 +482,7 @@
                         img.className = 'w-full h-full object-cover transition-opacity duration-300 group-hover:opacity-50';
                         previewElement.appendChild(img);
                     } else {
+                        // Untuk media/dokumen lain, tampilkan ikon file besar di thumbnail
                         let fileIcon = 'fa-solid ';
                         if (mimeType.startsWith('video/')) fileIcon += 'fa-video text-red-400';
                         else if (mimeType.startsWith('audio/')) fileIcon += 'fa-music text-purple-400';
@@ -507,14 +495,18 @@
                         `;
                     }
 
+                    // Event listener untuk membuka modal
                     previewElement.addEventListener('click', function(e) {
                         e.stopPropagation();
+                        // Memastikan mimeType dan fileName dikirim ke openModal
                         openModal(data.fileUrl, mimeType, fileName); 
                     });
                     
                     bubbleElement.appendChild(previewElement);
 
                 } else {
+                    // --- FILE NON-PREVIEWABLE (ZIP, TXT, DLL) - HANYA LINK DOWNLOAD ---
+
                     const fileElement = document.createElement('p');
                     fileElement.className = 'text-xs mt-1';
                     const link = document.createElement('a');
@@ -522,6 +514,7 @@
                     link.target = '_blank';
                     link.className = 'underline text-yellow-400';
                     link.textContent = fileName;
+                    // Tampilkan size
                     const sizeText = data.fileSize ? ` (${formatBytes(data.fileSize)})` : '';
                     
                     fileElement.innerHTML = `<i class="fa-solid fa-file-arrow-down mr-1"></i>File${sizeText}: `;
@@ -530,17 +523,20 @@
                 }
             }
 
+
             messageElement.appendChild(nameElement);
             messageElement.appendChild(bubbleElement);
             messagesDiv.appendChild(messageElement);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
 
-        // ==================== FILE UPLOAD ====================
+        // ==================== FILE UPLOAD (MENGGUNAKAN MAX_FILE_SIZE BARU) ====================
         
         async function uploadFileToApi(file) {
             if (!file) return null;
 
             if (file.size > MAX_FILE_SIZE) {
+                // Pesan error akan muncul jika file melebihi 6MB
                 uploadStatus.textContent = `File size too large (max ${formatBytes(MAX_FILE_SIZE)})!`;
                 uploadStatus.classList.remove('hidden');
                 return null;
@@ -607,7 +603,7 @@
             });
         }
 
-        // ==================== BUTTON STATE & EVENT LISTENERS ====================
+        // ==================== BUTTON STATE MANAGEMENT & EVENT LISTENERS (same as previous version) ====================
 
         function updateSendButtonState() {
             const hasText = messageInput.value.trim() !== '';
