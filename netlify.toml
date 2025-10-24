@@ -1,14 +1,8 @@
 [build]
   functions = "netlify/functions"
-  publish = "public" 
+  publish = "public"
 
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
   status = 200
-
-[functions]
-  # Batas waktu fungsi (default 10s)
-  timeout = 10
-  # Netlify Functions lebih suka CommonJS untuk dependensi
-  node_bundler = "esbuild"
