@@ -57,6 +57,22 @@
             <span id="user-info" class="text-sm text-gray-400">Connecting...</span>
         </div>
 
+        <div id="file-preview-area" class="px-4 pt-2 hidden">
+            <div class="p-3 bg-white/10 rounded-lg flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <i id="preview-icon" class="fa-solid fa-file text-gray-400"></i>
+                    <span id="preview-filename" class="text-sm"></span>
+                    <span id="preview-filesize" class="text-xs text-gray-500"></span>
+                </div>
+                <button type="button" id="cancel-upload" class="text-gray-400 hover:text-white transition-colors" title="Cancel Upload">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="h-1 mt-1 bg-gray-700 rounded overflow-hidden">
+                <div id="loading-bar" class="h-full bg-blue-500 transition-all duration-300" style="width: 0%;"></div>
+            </div>
+        </div>
+
         <div id="messages" class="flex-1 p-4 space-y-4">
             </div>
 
@@ -68,7 +84,7 @@
                     <i class="fa-solid fa-paperclip"></i>
                 </button>
 
-                <input type="text" id="message-input" placeholder="Type a message..." class="form-input flex-1 py-3 px-4 rounded-full text-sm" required>
+                <input type="text" id="message-input" placeholder="Type a message..." class="form-input flex-1 py-3 px-4 rounded-full text-sm">
                 
                 <button type="submit" id="send-button" class="bg-white/10 text-white p-3 rounded-full hover:bg-white/20 transition-colors" disabled>
                     <i class="fa-solid fa-paper-plane"></i>
@@ -88,22 +104,39 @@
         const uploadStatus = document.getElementById('upload-status');
         const sendButton = document.getElementById('send-button');
 
+        // New Elements for Preview/Loading
+        const filePreviewArea = document.getElementById('file-preview-area');
+        const previewFilename = document.getElementById('preview-filename');
+        const previewFilesize = document.getElementById('preview-filesize');
+        const previewIcon = document.getElementById('preview-icon');
+        const cancelUploadButton = document.getElementById('cancel-upload');
+        const loadingBar = document.getElementById('loading-bar');
+        
         let database;
         let messagesRef;
         let userCountRef;
         let anonymousId = localStorage.getItem('anonymous_id'); // ID lokal
         const UPLOAD_API_ENDPOINT = '/api/upload-file';
         const CONFIG_API_ENDPOINT = '/api/get-firebase-config';
+        const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB limit for upload
+
+        // --- Utility Function: Format File Size ---
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
 
         // --- 1. Ambil Konfigurasi & Inisialisasi Firebase ---
         async function initializeFirebase() {
             try {
                 userInfoSpan.textContent = 'Fetching config...';
                 
-                // Ambil konfigurasi dari API serverless
                 const response = await fetch(CONFIG_API_ENDPOINT);
                 if (!response.ok) {
-                    // Coba baca body error dari fungsi Netlify
                     const errorDetails = await response.text();
                     throw new Error(`Failed to fetch Firebase config. Status: ${response.status}. Details: ${errorDetails.substring(0, 50)}...`);
                 }
@@ -118,9 +151,9 @@
                 messagesRef = database.ref('messages');
                 userCountRef = database.ref('user_counter');
 
-                sendButton.disabled = false;
+                // Enable send button if input has text
+                sendButton.disabled = (messageInput.value.trim() === '' && !fileUpload.files[0]);
                 
-                // Mulai proses chat setelah inisialisasi
                 await getAnonymousId();
                 setupMessageListener();
 
@@ -139,7 +172,6 @@
                 return anonymousId;
             }
 
-            // Transaksi untuk mendapatkan ID baru secara atomik
             const snapshot = await userCountRef.transaction((currentCount) => {
                 return (currentCount || 0) + 1;
             });
@@ -170,17 +202,15 @@
             const nameClass = isSelf ? 'text-blue-400 font-bold' : 'text-gray-400';
             const bubbleClass = isSelf ? 'self-end bg-blue-900/40' : 'self-start bg-white/10';
             
-            // Format waktu
             const time = data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : '...';
 
             let contentHTML = data.text ? `<p class="text-sm">${data.text}</p>` : '';
             
-            // Tampilan untuk File
             if (data.fileUrl) {
                 const fileName = data.fileName || 'file_attachment';
                 const fileType = fileName.split('.').pop().toLowerCase();
                 
-                if (['jpg', 'jpeg', 'png', 'gif'].includes(fileType)) {
+                if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileType)) {
                     contentHTML += `<a href="${data.fileUrl}" target="_blank" class="block mt-2"><img src="${data.fileUrl}" class="max-h-40 max-w-full rounded cursor-pointer" alt="Image File"></a>`;
                 } else {
                     contentHTML += `<p class="text-xs mt-1"><i class="fa-solid fa-file mr-1"></i>File Attached: <a href="${data.fileUrl}" target="_blank" class="underline text-yellow-400">${fileName}</a></p>`;
@@ -194,13 +224,12 @@
                 </div>
             `;
             messagesDiv.appendChild(messageElement);
-            // Scroll ke bawah
             messagesDiv.scrollTop = messagesDiv.scrollHeight; 
         }
 
         // --- 5. Logika Unggah File ke API Serverless ---
         async function uploadFileToApi(file) {
-            if (file.size > 5 * 1024 * 1024) { // Batas 5MB
+            if (file.size > MAX_FILE_SIZE) {
                 uploadStatus.textContent = 'File size too large (max 5MB)!';
                 uploadStatus.classList.remove('hidden');
                 return null;
@@ -208,10 +237,20 @@
 
             uploadStatus.textContent = 'Uploading... (Do not navigate away)';
             uploadStatus.classList.remove('hidden');
+            loadingBar.style.width = '10%'; 
 
+            const loadingInterval = setInterval(() => {
+                let currentWidth = parseInt(loadingBar.style.width);
+                if (currentWidth < 90) {
+                    loadingBar.style.width = `${currentWidth + 5}%`;
+                }
+            }, 500);
+
+            let fileUrl = null;
+            
             try {
-                // Konversi file ke format Base64 yang dapat dikirim
                 const base64 = await fileToBase64(file);
+                loadingBar.style.width = '80%';
                 
                 const response = await fetch(UPLOAD_API_ENDPOINT, { 
                     method: 'POST',
@@ -219,21 +258,29 @@
                     body: JSON.stringify({ file: base64 })
                 });
 
+                clearInterval(loadingInterval);
+
                 const data = await response.json();
 
                 if (data.success && data.url) {
+                    loadingBar.style.width = '100%';
+                    fileUrl = data.url;
                     uploadStatus.textContent = 'Upload complete! Preparing to send message.';
-                    setTimeout(() => uploadStatus.classList.add('hidden'), 2000);
-                    return data.url;
+                    
                 } else {
                     throw new Error(data.details || 'Upload failed at the server.');
                 }
 
             } catch (error) {
+                clearInterval(loadingInterval);
+                loadingBar.style.width = '0%';
                 console.error('Upload error:', error);
                 uploadStatus.textContent = `Upload failed: ${error.message}`;
-                return null;
+            } finally {
+                filePreviewArea.classList.add('hidden');
+                setTimeout(() => uploadStatus.classList.add('hidden'), 3000);
             }
+            return fileUrl;
         }
 
         function fileToBase64(file) {
@@ -246,7 +293,57 @@
         }
 
         // --- 6. Event Listeners ---
+
         uploadButton.addEventListener('click', () => fileUpload.click());
+
+        messageInput.addEventListener('input', () => {
+            sendButton.disabled = (messageInput.value.trim() === '' && !fileUpload.files[0]);
+        });
+
+        // Listener untuk menampilkan preview saat file dipilih
+        fileUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                if (file.size > MAX_FILE_SIZE) {
+                     alert(`File terlalu besar. Batas maksimum: ${formatBytes(MAX_FILE_SIZE)}.`);
+                     fileUpload.value = ''; // Reset input
+                     return;
+                }
+                
+                filePreviewArea.classList.remove('hidden');
+                previewFilename.textContent = file.name;
+                previewFilesize.textContent = `(${formatBytes(file.size)})`;
+
+                const type = file.type.split('/')[0];
+                if (type === 'image') {
+                    previewIcon.className = 'fa-solid fa-image text-green-400';
+                } else if (type === 'video') {
+                    previewIcon.className = 'fa-solid fa-video text-red-400';
+                } else if (type === 'audio') {
+                    previewIcon.className = 'fa-solid fa-music text-purple-400';
+                } else {
+                    previewIcon.className = 'fa-solid fa-file text-gray-400';
+                }
+
+                sendButton.disabled = false;
+            } else {
+                filePreviewArea.classList.add('hidden');
+                if (!messageInput.value.trim()) {
+                    sendButton.disabled = true;
+                }
+            }
+        });
+
+        // Listener untuk membatalkan upload
+        cancelUploadButton.addEventListener('click', () => {
+            fileUpload.value = ''; // Reset input
+            filePreviewArea.classList.add('hidden');
+            loadingBar.style.width = '0%';
+            if (!messageInput.value.trim()) {
+                sendButton.disabled = true;
+            }
+        });
+
 
         messageForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -261,7 +358,7 @@
             
             if (file) {
                 fileUrl = await uploadFileToApi(file);
-                fileUpload.value = ''; // Reset input file setelah digunakan
+                fileUpload.value = ''; 
             }
 
             if (messageText || fileUrl) {
@@ -278,8 +375,9 @@
                 messageInput.value = ''; 
             }
             
+            // Re-enable inputs
             messageInput.disabled = false;
-            sendButton.disabled = false;
+            sendButton.disabled = (messageInput.value.trim() === '' && !fileUpload.files[0]);
             messageInput.focus();
         });
 
