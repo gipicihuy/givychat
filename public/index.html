@@ -150,7 +150,13 @@
         }
 
         // --- Modal Functions ---
-        function openModal(imageUrl) {
+        function openModal(imageUrl, event) {
+            // Mencegah navigasi atau event bubbling yang tidak diinginkan
+            if (event) {
+                event.preventDefault(); 
+                event.stopPropagation();
+            }
+            
             modalImage.src = imageUrl;
             modalDownloadLink.href = imageUrl;
             imageModal.classList.remove('hidden');
@@ -249,12 +255,13 @@
                 const fileType = fileName.split('.').pop().toLowerCase();
                 
                 if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileType)) {
-                    // Gambar sekarang memiliki handler onClick untuk membuka modal
+                    // PERBAIKAN: Pastikan tidak ada tag <a> di sini
                     contentHTML += `<img src="${data.fileUrl}" 
                                       class="max-h-40 max-w-full rounded cursor-pointer mt-2" 
                                       alt="Image File" 
-                                      onclick="openModal('${data.fileUrl}')">`;
+                                      onclick="openModal('${data.fileUrl}', event)">`;
                 } else {
+                    // File non-gambar tetap berupa link download
                     contentHTML += `<p class="text-xs mt-1"><i class="fa-solid fa-file mr-1"></i>File Attached: <a href="${data.fileUrl}" target="_blank" class="underline text-yellow-400">${fileName}</a></p>`;
                 }
             }
