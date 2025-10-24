@@ -93,6 +93,20 @@
             <p id="upload-status" class="text-xs text-gray-400 mt-1 hidden"></p>
         </div>
     </div>
+    
+    <div id="image-modal" class="fixed inset-0 bg-black bg-opacity-90 z-50 hidden flex justify-center items-center p-4" onclick="closeModal()">
+        <div class="relative max-w-full max-h-full">
+            <img id="modal-image" src="" alt="Image Preview" class="max-w-full max-h-[90vh] object-contain cursor-pointer" onclick="event.stopPropagation()">
+            
+            <button class="absolute top-4 right-4 text-white text-3xl hover:text-gray-400" title="Close" onclick="closeModal()">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            
+            <a id="modal-download-link" href="#" target="_blank" class="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/20 transition-colors" onclick="event.stopPropagation()">
+                <i class="fa-solid fa-download mr-2"></i>Download Original
+            </a>
+        </div>
+    </div>
 
     <script>
         const messageForm = document.getElementById('message-form');
@@ -104,7 +118,7 @@
         const uploadStatus = document.getElementById('upload-status');
         const sendButton = document.getElementById('send-button');
 
-        // New Elements for Preview/Loading
+        // Elements for Preview/Loading
         const filePreviewArea = document.getElementById('file-preview-area');
         const previewFilename = document.getElementById('preview-filename');
         const previewFilesize = document.getElementById('preview-filesize');
@@ -112,13 +126,18 @@
         const cancelUploadButton = document.getElementById('cancel-upload');
         const loadingBar = document.getElementById('loading-bar');
         
+        // Elements for Modal
+        const imageModal = document.getElementById('image-modal');
+        const modalImage = document.getElementById('modal-image');
+        const modalDownloadLink = document.getElementById('modal-download-link');
+        
         let database;
         let messagesRef;
         let userCountRef;
-        let anonymousId = localStorage.getItem('anonymous_id'); // ID lokal
+        let anonymousId = localStorage.getItem('anonymous_id');
         const UPLOAD_API_ENDPOINT = '/api/upload-file';
         const CONFIG_API_ENDPOINT = '/api/get-firebase-config';
-        const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB limit for upload
+        const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB limit
 
         // --- Utility Function: Format File Size ---
         function formatBytes(bytes, decimals = 2) {
@@ -129,6 +148,26 @@
             const i = Math.floor(Math.log(bytes) / Math.log(k));
             return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
         }
+
+        // --- Modal Functions ---
+        function openModal(imageUrl) {
+            modalImage.src = imageUrl;
+            modalDownloadLink.href = imageUrl;
+            imageModal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden'; // Nonaktifkan scroll body
+        }
+
+        function closeModal() {
+            imageModal.classList.add('hidden');
+            modalImage.src = '';
+            document.body.style.overflow = ''; // Aktifkan kembali scroll body
+        }
+        
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        });
 
         // --- 1. Ambil Konfigurasi & Inisialisasi Firebase ---
         async function initializeFirebase() {
@@ -151,7 +190,6 @@
                 messagesRef = database.ref('messages');
                 userCountRef = database.ref('user_counter');
 
-                // Enable send button if input has text
                 sendButton.disabled = (messageInput.value.trim() === '' && !fileUpload.files[0]);
                 
                 await getAnonymousId();
@@ -211,7 +249,11 @@
                 const fileType = fileName.split('.').pop().toLowerCase();
                 
                 if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileType)) {
-                    contentHTML += `<a href="${data.fileUrl}" target="_blank" class="block mt-2"><img src="${data.fileUrl}" class="max-h-40 max-w-full rounded cursor-pointer" alt="Image File"></a>`;
+                    // Gambar sekarang memiliki handler onClick untuk membuka modal
+                    contentHTML += `<img src="${data.fileUrl}" 
+                                      class="max-h-40 max-w-full rounded cursor-pointer mt-2" 
+                                      alt="Image File" 
+                                      onclick="openModal('${data.fileUrl}')">`;
                 } else {
                     contentHTML += `<p class="text-xs mt-1"><i class="fa-solid fa-file mr-1"></i>File Attached: <a href="${data.fileUrl}" target="_blank" class="underline text-yellow-400">${fileName}</a></p>`;
                 }
@@ -300,13 +342,12 @@
             sendButton.disabled = (messageInput.value.trim() === '' && !fileUpload.files[0]);
         });
 
-        // Listener untuk menampilkan preview saat file dipilih
         fileUpload.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) {
                 if (file.size > MAX_FILE_SIZE) {
                      alert(`File terlalu besar. Batas maksimum: ${formatBytes(MAX_FILE_SIZE)}.`);
-                     fileUpload.value = ''; // Reset input
+                     fileUpload.value = '';
                      return;
                 }
                 
@@ -334,9 +375,8 @@
             }
         });
 
-        // Listener untuk membatalkan upload
         cancelUploadButton.addEventListener('click', () => {
-            fileUpload.value = ''; // Reset input
+            fileUpload.value = '';
             filePreviewArea.classList.add('hidden');
             loadingBar.style.width = '0%';
             if (!messageInput.value.trim()) {
@@ -375,7 +415,6 @@
                 messageInput.value = ''; 
             }
             
-            // Re-enable inputs
             messageInput.disabled = false;
             sendButton.disabled = (messageInput.value.trim() === '' && !fileUpload.files[0]);
             messageInput.focus();
