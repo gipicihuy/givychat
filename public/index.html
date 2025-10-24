@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <title>Anonymous Chat - # general</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cousine:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer"/>
+    
+    <style>
+        body {
+            font-family: 'Cousine', monospace;
+            background-color: #000; /* pure-black-bg */
+        }
+        .chat-container {
+            max-width: 600px;
+            height: 100vh;
+        }
+        .form-input {
+            background-color: rgba(255,255,255,.1);
+            border: 1px solid rgba(255,255,255,.2);
+            color: #fff;
+            transition: all .3s ease;
+        }
+        .form-input:focus {
+            background-color: rgba(255,255,255,.15);
+            border-color: rgba(255,255,255,.4);
+            box-shadow: 0 0 0 2px rgba(255,255,255,.1);
+        }
+        .message-bubble {
+            background-color: rgba(255, 255, 255, 0.05); /* Lighter than background */
+            border-radius: 8px;
+            padding: 8px 12px;
+            word-wrap: break-word;
+        }
+        #messages {
+            overflow-y: auto;
+            max-height: calc(100vh - 120px); 
+            height: 100%;
+            scroll-behavior: smooth;
+        }
+        /* Custom Scrollbar */
+        #messages::-webkit-scrollbar { width: 6px; }
+        #messages::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 3px; }
+        #messages::-webkit-scrollbar-track { background: transparent; }
+    </style>
+    
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+</head>
+<body class="p-0 text-white min-h-screen flex justify-center">
+
+    <div class="chat-container flex flex-col mx-auto">
+        <div class="p-4 border-b border-white/10 flex items-center justify-between sticky top-0 bg-black z-10">
+            <h1 class="text-xl font-bold tracking-wider text-white"># general</h1>
+            <span id="user-info" class="text-sm text-gray-400">Connecting...</span>
+        </div>
+
+        <div id="messages" class="flex-1 p-4 space-y-4">
+            </div>
+
+        <div class="p-4 border-t border-white/10 sticky bottom-0 bg-black z-10">
+            <form id="message-form" class="flex space-x-2">
+                
+                <input type="file" id="file-upload" accept="image/*,video/*,audio/*,.pdf,.txt" class="hidden">
+                <button type="button" id="upload-button" class="form-input p-3 rounded-full hover:bg-white/20 transition-colors" title="Attach File">
+                    <i class="fa-solid fa-paperclip"></i>
+                </button>
+
+                <input type="text" id="message-input" placeholder="Type a message..." class="form-input flex-1 py-3 px-4 rounded-full text-sm" required>
+                
+                <button type="submit" id="send-button" class="bg-white/10 text-white p-3 rounded-full hover:bg-white/20 transition-colors" disabled>
+                    <i class="fa-solid fa-paper-plane"></i>
+                </button>
+            </form>
+            <p id="upload-status" class="text-xs text-gray-400 mt-1 hidden"></p>
+        </div>
+    </div>
+
+    <script>
+        const messageForm = document.getElementById('message-form');
+        const messageInput = document.getElementById('message-input');
+        const messagesDiv = document.getElementById('messages');
+        const userInfoSpan = document.getElementById('user-info');
+        const uploadButton = document.getElementById('upload-button');
+        const fileUpload = document.getElementById('file-upload');
+        const uploadStatus = document.getElementById('upload-status');
+        const sendButton = document.getElementById('send-button');
+
+        let database;
+        let messagesRef;
+        let userCountRef;
+        let anonymousId = localStorage.getItem('anonymous_id'); // ID lokal
+        const UPLOAD_API_ENDPOINT = '/api/upload-file';
+        const CONFIG_API_ENDPOINT = '/api/get-firebase-config';
+
+        // --- 1. Ambil Konfigurasi & Inisialisasi Firebase ---
+        async function initializeFirebase() {
+            try {
+                userInfoSpan.textContent = 'Fetching config...';
+                
+                // Ambil konfigurasi dari API serverless
+                const response = await fetch(CONFIG_API_ENDPOINT);
+                if (!response.ok) throw new Error("Failed to fetch Firebase config.");
+                
+                const firebaseConfig = await response.json();
+
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(firebaseConfig);
+                }
+                
+                database = firebase.database();
+                messagesRef = database.ref('messages');
+                userCountRef = database.ref('user_counter');
+
+                sendButton.disabled = false;
+                
+                // Mulai proses chat setelah inisialisasi
+                await getAnonymousId();
+                setupMessageListener();
+
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+                userInfoSpan.textContent = 'Connection Failed! ⚠️';
+                // Tampilkan error ke pengguna
+                uploadStatus.textContent = "Error: Cannot connect to chat. Check console.";
+                uploadStatus.classList.remove('hidden');
+            }
+        }
+
+        // --- 2. Logika Penomoran Anonymous (Persisten) ---
+        async function getAnonymousId() {
+            if (anonymousId) {
+                userInfoSpan.textContent = `You are Anonymous #${anonymousId}`;
+                return anonymousId;
+            }
+
+            // Transaksi untuk mendapatkan ID baru secara atomik
+            const snapshot = await userCountRef.transaction((currentCount) => {
+                // Tambahkan 1 ke counter yang ada, atau mulai dari 1
+                return (currentCount || 0) + 1;
+            });
+
+            if (snapshot.committed) {
+                anonymousId = snapshot.snapshot.val();
+                localStorage.setItem('anonymous_id', anonymousId); 
+                userInfoSpan.textContent = `You are Anonymous #${anonymousId}`;
+                return anonymousId;
+            }
+        }
+
+        // --- 3. Listener Pesan Baru ---
+        function setupMessageListener() {
+            messagesRef.on('child_added', (snapshot) => {
+                const message = snapshot.val();
+                displayMessage(message);
+            });
+        }
+
+        // --- 4. Fungsi Tampilan Pesan ---
+        function displayMessage(data) {
+            const messageElement = document.createElement('div');
+            messageElement.className = 'flex flex-col';
+            
+            const isSelf = data.anonymousId == anonymousId;
+
+            const nameClass = isSelf ? 'text-blue-400 font-bold' : 'text-gray-400';
+            const bubbleClass = isSelf ? 'self-end bg-blue-900/40' : 'self-start bg-white/10';
+            
+            // Format waktu
+            const time = data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : '...';
+
+            let contentHTML = data.text ? `<p class="text-sm">${data.text}</p>` : '';
+            
+            // Tampilan untuk File
+            if (data.fileUrl) {
+                const fileName = data.fileName || 'file_attachment';
+                const fileType = fileName.split('.').pop().toLowerCase();
+                
+                if (['jpg', 'jpeg', 'png', 'gif'].includes(fileType)) {
+                    contentHTML += `<a href="${data.fileUrl}" target="_blank" class="block mt-2"><img src="${data.fileUrl}" class="max-h-40 max-w-full rounded cursor-pointer" alt="Image File"></a>`;
+                } else {
+                    contentHTML += `<p class="text-xs mt-1"><i class="fa-solid fa-file mr-1"></i>File Attached: <a href="${data.fileUrl}" target="_blank" class="underline text-yellow-400">${fileName}</a></p>`;
+                }
+            }
+
+            messageElement.innerHTML = `
+                <span class="text-xs ${nameClass} mb-1">${data.name} <span class="text-gray-500 text-xs">(${time})</span></span>
+                <div class="message-bubble ${bubbleClass} max-w-[85%]">
+                    ${contentHTML}
+                </div>
+            `;
+            messagesDiv.appendChild(messageElement);
+            // Scroll ke bawah
+            messagesDiv.
