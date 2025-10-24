@@ -11,7 +11,7 @@
     <style>
         body {
             font-family: 'Cousine', monospace;
-            background-color: #000; /* pure-black-bg */
+            background-color: #000;
         }
         .chat-container {
             max-width: 600px;
@@ -29,7 +29,7 @@
             box-shadow: 0 0 0 2px rgba(255,255,255,.1);
         }
         .message-bubble {
-            background-color: rgba(255, 255, 255, 0.05); /* Lighter than background */
+            background-color: rgba(255, 255, 255, 0.05);
             border-radius: 8px;
             padding: 8px 12px;
             word-wrap: break-word;
@@ -40,7 +40,6 @@
             height: 100%;
             scroll-behavior: smooth;
         }
-        /* Custom Scrollbar */
         #messages::-webkit-scrollbar { width: 6px; }
         #messages::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 3px; }
         #messages::-webkit-scrollbar-track { background: transparent; }
@@ -255,7 +254,7 @@
                 const fileType = fileName.split('.').pop().toLowerCase();
                 
                 if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileType)) {
-                    // PERBAIKAN: Pastikan tidak ada tag <a> di sini
+                    // KODE SUDAH BENAR: Langsung tag <img>, tanpa tag <a> pembungkus
                     contentHTML += `<img src="${data.fileUrl}" 
                                       class="max-h-40 max-w-full rounded cursor-pointer mt-2" 
                                       alt="Image File" 
