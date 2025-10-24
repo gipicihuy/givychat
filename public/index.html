@@ -109,11 +109,11 @@
         <div class="relative max-w-full max-h-full">
             <img id="modal-image" src="" alt="Image Preview" class="max-w-full max-h-[90vh] object-contain">
             
-            <button type="button" class="absolute top-4 right-4 text-white text-3xl hover:text-gray-400" title="Close" onclick="window.closeModal()">
+            <button type="button" class="absolute top-4 right-4 text-white text-3xl hover:text-gray-400" title="Close" onclick="closeModal()">
                 <i class="fa-solid fa-xmark"></i>
             </button>
             
-            <a id="modal-download-link" href="#" target="_blank" class="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/20 transition-colors">
+            <a id="modal-download-link" href="#" target="_blank" class="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/20 transition-colors" onclick="event.stopPropagation()">
                 <i class="fa-solid fa-download mr-2"></i>Download Original
             </a>
         </div>
@@ -131,14 +131,12 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
         }
 
-        // Sanitize HTML - prevent XSS
         function sanitizeHTML(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         }
 
-        // Generate UUID for fallback anonymous ID
         function generateUUID() {
             return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
                 const r = Math.random() * 16 | 0;
@@ -149,7 +147,8 @@
 
         // ==================== MODAL FUNCTIONS ====================
         
-        window.openModal = function(imageUrl) {
+        // **PERBAIKAN: Hapus 'window.' dari definisi fungsi**
+        function openModal(imageUrl) {
             try {
                 const modalImage = document.getElementById('modal-image');
                 const modalDownloadLink = document.getElementById('modal-download-link');
@@ -162,9 +161,10 @@
             } catch (error) {
                 console.error('Error opening modal:', error);
             }
-        };
+        }
 
-        window.closeModal = function() {
+        // **PERBAIKAN: Hapus 'window.' dari definisi fungsi**
+        function closeModal() {
             try {
                 const imageModal = document.getElementById('image-modal');
                 const modalImage = document.getElementById('modal-image');
@@ -175,20 +175,21 @@
             } catch (error) {
                 console.error('Error closing modal:', error);
             }
-        };
+        }
 
         // Close modal when clicking outside image
         document.addEventListener('click', function(e) {
             const imageModal = document.getElementById('image-modal');
-            if (e.target === imageModal) {
-                window.closeModal();
+            // Pastikan kita mengklik background modal, bukan konten di dalamnya
+            if (e.target === imageModal) { 
+                closeModal(); // Panggil fungsi tanpa 'window.'
             }
         });
 
         // Close modal with Escape key
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
-                window.closeModal();
+                closeModal(); // Panggil fungsi tanpa 'window.'
             }
         });
 
@@ -213,9 +214,9 @@
         let database;
         let messagesRef;
         let userCountRef;
-        let messageListener = null; // FIX #6: Store listener reference
+        let messageListener = null;
         let anonymousId = null;
-        let pendingFileUrl = null; // Track if upload is in progress
+        let pendingFileUrl = false;
 
         const UPLOAD_API_ENDPOINT = '/api/upload-file';
         const CONFIG_API_ENDPOINT = '/api/get-firebase-config';
@@ -254,15 +255,13 @@
             }
         }
 
-        // ==================== INDEXEDDB FOR PERSISTENT STORAGE ====================
+        // ==================== INDEXEDDB FOR PERSISTENT STORAGE (omitted for brevity, assume correct) ====================
         
         function openIndexedDB() {
             return new Promise((resolve, reject) => {
                 const request = indexedDB.open('GivyChatDB', 1);
-                
                 request.onerror = () => reject(request.error);
                 request.onsuccess = () => resolve(request.result);
-                
                 request.onupgradeneeded = (event) => {
                     const db = event.target.result;
                     if (!db.objectStoreNames.contains('user')) {
@@ -279,7 +278,6 @@
                     const transaction = db.transaction(['user'], 'readonly');
                     const store = transaction.objectStore('user');
                     const request = store.get('anonymous_id');
-                    
                     request.onerror = () => reject(request.error);
                     request.onsuccess = () => resolve(request.result?.value || null);
                 });
@@ -296,7 +294,6 @@
                     const transaction = db.transaction(['user'], 'readwrite');
                     const store = transaction.objectStore('user');
                     const request = store.put({ id: 'anonymous_id', value: id });
-                    
                     request.onerror = () => reject(request.error);
                     request.onsuccess = () => resolve(true);
                 });
@@ -315,7 +312,6 @@
             }
 
             try {
-                // Cek IndexedDB dulu (TIDAK terhapus saat clear cookies)
                 let stored = await getStoredAnonymousId();
                 if (stored) {
                     anonymousId = stored;
@@ -323,21 +319,18 @@
                     return anonymousId;
                 }
 
-                // Kalau tidak ada, ambil dari Firebase user_counter (auto-increment)
                 const snapshot = await userCountRef.transaction((currentCount) => {
                     return (currentCount || 0) + 1;
                 });
 
                 if (snapshot.committed) {
                     anonymousId = snapshot.snapshot.val();
-                    // Simpan ke IndexedDB (PERMANENT, bahkan setelah clear cookies)
                     await saveAnonymousId(anonymousId);
                     userInfoSpan.textContent = `You are Anonymous #${anonymousId}`;
                     return anonymousId;
                 }
             } catch (error) {
                 console.warn('Could not get numbered ID, using UUID:', error);
-                // Fallback ke UUID jika semua gagal
                 anonymousId = 'anon-' + generateUUID();
                 userInfoSpan.textContent = `You are ${anonymousId}`;
                 return anonymousId;
@@ -347,7 +340,6 @@
         // ==================== MESSAGE LISTENER ====================
         
         function setupMessageListener() {
-            // FIX #6: Remove old listener if exists
             if (messageListener) {
                 messagesRef.off('child_added', messageListener);
             }
@@ -360,7 +352,7 @@
             messagesRef.on('child_added', messageListener);
         }
 
-        // ==================== DISPLAY MESSAGE ====================
+        // ==================== DISPLAY MESSAGE (PERHATIKAN BAGIAN INI) ====================
         
         function displayMessage(data) {
             if (!data || !data.name) return;
@@ -374,41 +366,38 @@
             
             const time = data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : '...';
 
-            // Create name element
             const nameElement = document.createElement('span');
             nameElement.className = `text-xs ${nameClass} mb-1`;
             nameElement.innerHTML = `${sanitizeHTML(data.name)} <span class="text-gray-500 text-xs">(${time})</span>`;
 
-            // Create bubble
             const bubbleElement = document.createElement('div');
             bubbleElement.className = `message-bubble ${bubbleClass} max-w-[85%]`;
 
-            // FIX #4: Sanitize text content - prevent XSS
             if (data.text) {
                 const textElement = document.createElement('p');
                 textElement.className = 'text-sm';
-                textElement.textContent = data.text; // Use textContent, not innerHTML
+                textElement.textContent = data.text;
                 bubbleElement.appendChild(textElement);
             }
             
-            // Handle file attachments
             if (data.fileUrl) {
                 const fileName = data.fileName || 'file_attachment';
                 const fileType = fileName.split('.').pop().toLowerCase();
                 
                 if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileType)) {
-                    // FIX #2: Use createElement to avoid template literal injection
+                    // **PERBAIKAN KRUSIAL: Tambahkan EventListener pada img**
                     const img = document.createElement('img');
                     img.src = data.fileUrl;
                     img.alt = 'Image attachment';
-                    img.className = 'message-image';
-                    img.onclick = function(e) {
+                    img.className = 'message-image'; 
+                    
+                    img.addEventListener('click', function(e) {
                         e.stopPropagation();
-                        window.openModal(data.fileUrl);
-                    };
+                        openModal(data.fileUrl); // Panggil fungsi tanpa 'window.'
+                    });
+                    
                     bubbleElement.appendChild(img);
                 } else {
-                    // File attachment (non-image)
                     const fileElement = document.createElement('p');
                     fileElement.className = 'text-xs mt-1';
                     const link = document.createElement('a');
@@ -527,7 +516,6 @@
                 return;
             }
 
-            // FIX #9: Validate file size before showing preview
             if (file.size > MAX_FILE_SIZE) {
                 alert(`File terlalu besar. Batas maksimum: ${formatBytes(MAX_FILE_SIZE)}.`);
                 fileUpload.value = '';
@@ -566,7 +554,6 @@
             const messageText = messageInput.value.trim();
             const file = fileUpload.files[0];
 
-            // FIX #10: Don't send if both empty or upload in progress
             if (!messageText && !file) return;
             if (pendingFileUrl) return;
 
@@ -577,7 +564,7 @@
             
             if (file) {
                 fileUrl = await uploadFileToApi(file);
-                // FIX #10: Only send message if upload successful OR message has text
+                
                 if (!fileUrl && !messageText) {
                     messageInput.disabled = false;
                     updateSendButtonState();
