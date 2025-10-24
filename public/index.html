@@ -173,7 +173,7 @@
 
         // ==================== MODAL FUNCTIONS ====================
         
-        // REVISI FUNGSI openModal untuk mendukung berbagai tipe file
+        // FUNGSI openModal untuk mendukung berbagai tipe file (Memastikan controls dan autoplay)
         function openModal(fileUrl, mimeType, fileName) {
             try {
                 const imageModal = document.getElementById('image-modal');
@@ -195,15 +195,15 @@
                 } else if (type === 'video') {
                     mediaElement = document.createElement('video');
                     mediaElement.src = fileUrl;
-                    mediaElement.controls = true;
-                    mediaElement.autoplay = true;
+                    mediaElement.controls = true; 
+                    mediaElement.autoplay = true; 
                     mediaElement.className = 'max-w-full max-h-[90vh]';
                     
                 } else if (type === 'audio') {
                     mediaElement = document.createElement('audio');
                     mediaElement.src = fileUrl;
-                    mediaElement.controls = true;
-                    mediaElement.autoplay = true;
+                    mediaElement.controls = true; 
+                    mediaElement.autoplay = true; 
                     mediaElement.className = 'w-full md:w-96 p-4 bg-gray-800 rounded-lg';
                     
                 } else if (mimeType === 'application/pdf') {
@@ -288,8 +288,7 @@
         const UPLOAD_API_ENDPOINT = '/api/upload-file';
         const CONFIG_API_ENDPOINT = '/api/get-firebase-config';
         
-        // PERBAIKAN BATAS UKURAN FILE: 5MB -> 50MB
-        const MAX_FILE_SIZE = 50 * 1024 * 1024; 
+        const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
         // ==================== ANONYMOUS ID & FIREBASE (omitted for brevity, same as previous version) ====================
         
@@ -410,7 +409,7 @@
             }
         }
 
-        // ==================== DISPLAY MESSAGE (REVISI LOGIKA PREVIEW) ====================
+        // ==================== DISPLAY MESSAGE (REVISI FINAL) ====================
         
         function displayMessage(data) {
             if (!data || !data.name) return;
@@ -438,9 +437,10 @@
                 bubbleElement.appendChild(textElement);
             }
             
+            // Handle file attachments
             if (data.fileUrl) {
                 const fileName = data.fileName || 'file_attachment';
-                const mimeType = getMimeType(fileName); // Dapatkan MIME type
+                const mimeType = getMimeType(fileName); 
                 
                 const isPreviewable = mimeType.startsWith('image/') || 
                                       mimeType.startsWith('video/') || 
@@ -448,15 +448,22 @@
                                       mimeType === 'application/pdf';
                 
                 if (isPreviewable) {
-                    // Elemen yang bisa diklik untuk membuka modal
+                    // --- MEDIA YANG DAPAT DI-PREVIEW (IMAGE, VIDEO, AUDIO, PDF) ---
                     const previewElement = document.createElement('div');
                     previewElement.className = 'max-w-40 max-h-40 rounded cursor-pointer mt-2 overflow-hidden border border-white/20 relative group';
                     previewElement.style.backgroundColor = 'rgba(255,255,255,0.05)';
 
+                    // Tentukan ikon berdasarkan tipe file
+                    let iconClass = 'fa-solid ';
+                    if (mimeType.startsWith('image/')) iconClass = 'fa-solid fa-expand';
+                    else if (mimeType.startsWith('video/')) iconClass = 'fa-solid fa-circle-play';
+                    else if (mimeType.startsWith('audio/')) iconClass = 'fa-solid fa-volume-high';
+                    else if (mimeType === 'application/pdf') iconClass = 'fa-solid fa-file-pdf';
+
                     // Ikon Play/Preview di tengah
                     previewElement.innerHTML = `
                         <div class="absolute inset-0 flex items-center justify-center bg-black/50 group-hover:bg-black/70 transition-all z-10">
-                            <i class="fa-solid fa-expand text-white text-3xl"></i>
+                            <i class="${iconClass} text-white text-3xl"></i>
                         </div>
                     `;
                     
@@ -468,16 +475,15 @@
                         img.className = 'w-full h-full object-cover transition-opacity duration-300 group-hover:opacity-50';
                         previewElement.appendChild(img);
                     } else {
-                        // Untuk media/dokumen lain, tampilkan ikon file
-                        let iconClass = 'fa-solid ';
-                        if (mimeType.startsWith('video/')) iconClass += 'fa-video text-red-400';
-                        else if (mimeType.startsWith('audio/')) iconClass += 'fa-music text-purple-400';
-                        else if (mimeType === 'application/pdf') iconClass += 'fa-file-pdf text-red-600';
-                        else iconClass += 'fa-file-export text-gray-400';
+                        // Untuk media/dokumen lain, tampilkan ikon file besar di thumbnail
+                        let fileIcon = 'fa-solid ';
+                        if (mimeType.startsWith('video/')) fileIcon += 'fa-video text-red-400';
+                        else if (mimeType.startsWith('audio/')) fileIcon += 'fa-music text-purple-400';
+                        else if (mimeType === 'application/pdf') fileIcon += 'fa-file-pdf text-red-600';
                         
                         previewElement.innerHTML += `
                             <div class="w-full h-full flex items-center justify-center">
-                                <i class="${iconClass} text-5xl"></i>
+                                <i class="${fileIcon} text-5xl"></i>
                             </div>
                         `;
                     }
@@ -485,13 +491,15 @@
                     // Event listener untuk membuka modal
                     previewElement.addEventListener('click', function(e) {
                         e.stopPropagation();
+                        // Memastikan mimeType dan fileName dikirim ke openModal
                         openModal(data.fileUrl, mimeType, fileName); 
                     });
                     
                     bubbleElement.appendChild(previewElement);
 
                 } else {
-                    // File attachment (non-previewable)
+                    // --- FILE NON-PREVIEWABLE (ZIP, TXT, DLL) - HANYA LINK DOWNLOAD ---
+
                     const fileElement = document.createElement('p');
                     fileElement.className = 'text-xs mt-1';
                     const link = document.createElement('a');
@@ -499,12 +507,15 @@
                     link.target = '_blank';
                     link.className = 'underline text-yellow-400';
                     link.textContent = fileName;
-                    // Asumsi fileSize tidak disimpan. Jika disimpan, tambahkan: (${formatBytes(data.fileSize || 0)})
-                    fileElement.innerHTML = `<i class="fa-solid fa-file mr-1"></i>File: `;
+                    // Tampilkan size
+                    const sizeText = data.fileSize ? ` (${formatBytes(data.fileSize)})` : '';
+                    
+                    fileElement.innerHTML = `<i class="fa-solid fa-file-arrow-down mr-1"></i>File${sizeText}: `;
                     fileElement.appendChild(link);
                     bubbleElement.appendChild(fileElement);
                 }
             }
+
 
             messageElement.appendChild(nameElement);
             messageElement.appendChild(bubbleElement);
@@ -515,7 +526,6 @@
         // ==================== FILE UPLOAD (MENGGUNAKAN MAX_FILE_SIZE BARU) ====================
         
         async function uploadFileToApi(file) {
-            // ... (Kode uploadFileToApi sama, hanya menggunakan MAX_FILE_SIZE = 50MB) ...
             if (!file) return null;
 
             if (file.size > MAX_FILE_SIZE) {
@@ -675,7 +685,6 @@
                     timestamp: firebase.database.ServerValue.TIMESTAMP, 
                     fileUrl: fileUrl,
                     fileName: file ? file.name : null,
-                    // Tambahkan file size saat upload berhasil
                     fileSize: file ? file.size : null
                 };
 
