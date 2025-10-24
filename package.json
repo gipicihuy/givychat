@@ -4,7 +4,7 @@
   "description": "Anon chat using Netlify Functions and Firebase",
   "main": "netlify/functions/get-firebase-config.js",
   "dependencies": {
-    "node-fetch": "^2.6.7",  
+    "node-fetch": "^2.6.7",
     "form-data": "^4.0.0"
   },
   "scripts": {
