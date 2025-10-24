@@ -85,19 +85,19 @@
             </div>
         </div>
 
-        <div id="messages" class="flex-1 p-4 space-y-4"></div>
+        <div id="messages" class="flex-1 p-4 space-y-4 pb-24"></div>
 
-        <div class="p-4 border-t border-white/10 sticky bottom-0 bg-black z-10">
+        <div class="p-4 border-t border-white/10 fixed bottom-0 left-1/2 transform -translate-x-1/2 bg-black z-10 w-full max-w-[600px]">
             <form id="message-form" class="flex space-x-2">
                 
                 <input type="file" id="file-upload" accept="image/*,video/*,audio/*,.pdf,.txt" class="hidden">
-                <button type="button" id="upload-button" class="form-input p-3 rounded-full hover:bg-white/20 transition-colors" title="Attach File">
+                <button type="button" id="upload-button" class="form-input p-3 hover:bg-white/20 transition-colors" title="Attach File">
                     <i class="fa-solid fa-paperclip"></i>
                 </button>
 
-                <input type="text" id="message-input" placeholder="Type a message..." class="form-input flex-1 py-3 px-4 rounded-full text-sm">
+                <input type="text" id="message-input" placeholder="Type a message..." class="form-input flex-1 py-3 px-4 text-sm">
                 
-                <button type="submit" id="send-button" class="bg-white/10 text-white p-3 rounded-full hover:bg-white/20 transition-colors" disabled>
+                <button type="submit" id="send-button" class="bg-white/10 text-white p-3 hover:bg-white/20 transition-colors" disabled>
                     <i class="fa-solid fa-paper-plane"></i>
                 </button>
             </form>
@@ -214,7 +214,7 @@
         let messagesRef;
         let userCountRef;
         let messageListener = null; // FIX #6: Store listener reference
-        let anonymousId = localStorage.getItem('anonymous_id') || null;
+        let anonymousId = null;
         let pendingFileUrl = null; // Track if upload is in progress
 
         const UPLOAD_API_ENDPOINT = '/api/upload-file';
@@ -254,6 +254,58 @@
             }
         }
 
+        // ==================== INDEXEDDB FOR PERSISTENT STORAGE ====================
+        
+        function openIndexedDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open('GivyChatDB', 1);
+                
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => resolve(request.result);
+                
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains('user')) {
+                        db.createObjectStore('user', { keyPath: 'id' });
+                    }
+                };
+            });
+        }
+
+        async function getStoredAnonymousId() {
+            try {
+                const db = await openIndexedDB();
+                return new Promise((resolve, reject) => {
+                    const transaction = db.transaction(['user'], 'readonly');
+                    const store = transaction.objectStore('user');
+                    const request = store.get('anonymous_id');
+                    
+                    request.onerror = () => reject(request.error);
+                    request.onsuccess = () => resolve(request.result?.value || null);
+                });
+            } catch (error) {
+                console.warn('IndexedDB read error:', error);
+                return null;
+            }
+        }
+
+        async function saveAnonymousId(id) {
+            try {
+                const db = await openIndexedDB();
+                return new Promise((resolve, reject) => {
+                    const transaction = db.transaction(['user'], 'readwrite');
+                    const store = transaction.objectStore('user');
+                    const request = store.put({ id: 'anonymous_id', value: id });
+                    
+                    request.onerror = () => reject(request.error);
+                    request.onsuccess = () => resolve(true);
+                });
+            } catch (error) {
+                console.warn('IndexedDB write error:', error);
+                return false;
+            }
+        }
+
         // ==================== ANONYMOUS ID MANAGEMENT ====================
         
         async function getAnonymousId() {
@@ -263,19 +315,29 @@
             }
 
             try {
+                // Cek IndexedDB dulu (TIDAK terhapus saat clear cookies)
+                let stored = await getStoredAnonymousId();
+                if (stored) {
+                    anonymousId = stored;
+                    userInfoSpan.textContent = `You are Anonymous #${anonymousId}`;
+                    return anonymousId;
+                }
+
+                // Kalau tidak ada, ambil dari Firebase user_counter (auto-increment)
                 const snapshot = await userCountRef.transaction((currentCount) => {
                     return (currentCount || 0) + 1;
                 });
 
                 if (snapshot.committed) {
                     anonymousId = snapshot.snapshot.val();
-                    localStorage.setItem('anonymous_id', anonymousId);
+                    // Simpan ke IndexedDB (PERMANENT, bahkan setelah clear cookies)
+                    await saveAnonymousId(anonymousId);
                     userInfoSpan.textContent = `You are Anonymous #${anonymousId}`;
                     return anonymousId;
                 }
             } catch (error) {
                 console.warn('Could not get numbered ID, using UUID:', error);
-                // FIX #5: Fallback to UUID if localStorage fails
+                // Fallback ke UUID jika semua gagal
                 anonymousId = 'anon-' + generateUUID();
                 userInfoSpan.textContent = `You are ${anonymousId}`;
                 return anonymousId;
