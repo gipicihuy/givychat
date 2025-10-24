@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1.0">
-    <title>Anonymous Chat - # general</title>
+    <title>Anonymous Chat - #chat</title>
     <link href="https://fonts.googleapis.com/css2?family=Cousine:wght@400;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer"/>
@@ -77,7 +77,7 @@
 
     <div class="chat-container flex flex-col mx-auto">
         <div class="p-4 border-b border-white/10 flex items-center justify-between sticky top-0 bg-black z-10">
-            <h1 class="text-xl font-bold tracking-wider text-white"># general</h1>
+            <h1 class="text-xl font-bold tracking-wider text-white">#chat</h1>
             <span id="user-info" class="text-sm text-gray-400">Connecting...</span>
         </div>
 
@@ -288,7 +288,8 @@
         const UPLOAD_API_ENDPOINT = '/api/upload-file';
         const CONFIG_API_ENDPOINT = '/api/get-firebase-config';
         
-        const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+        // BATAS UKURAN FILE DIUBAH KE 6MB
+        const MAX_FILE_SIZE = 6 * 1024 * 1024; 
 
         // ==================== ANONYMOUS ID & FIREBASE (omitted for brevity, same as previous version) ====================
         
@@ -409,7 +410,7 @@
             }
         }
 
-        // ==================== DISPLAY MESSAGE (REVISI FINAL) ====================
+        // ==================== DISPLAY MESSAGE (FINAL) ====================
         
         function displayMessage(data) {
             if (!data || !data.name) return;
@@ -529,6 +530,7 @@
             if (!file) return null;
 
             if (file.size > MAX_FILE_SIZE) {
+                // Pesan error akan muncul jika file melebihi 6MB
                 uploadStatus.textContent = `File size too large (max ${formatBytes(MAX_FILE_SIZE)})!`;
                 uploadStatus.classList.remove('hidden');
                 return null;
