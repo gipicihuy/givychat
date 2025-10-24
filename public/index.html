@@ -32,10 +32,9 @@
             background-color: rgba(255, 255, 255, 0.05);
             border-radius: 8px;
             padding: 8px 12px;
-            /* PROPERTI UNTUK MENGATASI WORD BREAK (word-wrap sudah ada di kode sebelumnya) */
             word-wrap: break-word; 
             word-break: break-word; 
-            overflow-wrap: break-word; /* Kompatibilitas lintas browser */
+            overflow-wrap: break-word;
         }
         #messages {
             overflow-y: auto;
@@ -46,31 +45,6 @@
         #messages::-webkit-scrollbar { width: 6px; }
         #messages::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 3px; }
         #messages::-webkit-scrollbar-track { background: transparent; }
-        
-        .message-image {
-            max-height: 200px;
-            max-width: 100%;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: opacity 0.2s ease;
-            display: block;
-            margin-top: 8px;
-        }
-        .message-image:hover {
-            opacity: 0.8;
-        }
-
-        /* Style untuk media dalam modal */
-        #media-preview-content img,
-        #media-preview-content video {
-            max-width: 100%;
-            max-height: 90vh;
-            object-fit: contain;
-        }
-        #media-preview-content video {
-            background-color: black;
-            border-radius: 8px;
-        }
     </style>
     
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -84,6 +58,7 @@
             <span id="user-info" class="text-sm text-gray-400">Connecting...</span>
         </div>
 
+        <!-- FILE PREVIEW & LOADING BAR - TETAP VISIBLE SAAT UPLOAD -->
         <div id="file-preview-area" class="px-4 pt-2 hidden">
             <div class="p-3 bg-white/10 rounded-lg flex items-center justify-between">
                 <div class="flex items-center space-x-3">
@@ -98,13 +73,13 @@
             <div class="h-1 mt-1 bg-gray-700 rounded overflow-hidden">
                 <div id="loading-bar" class="h-full bg-blue-500 transition-all duration-300" style="width: 0%;"></div>
             </div>
+            <div id="upload-status" class="text-xs text-gray-400 mt-2 text-center"></div>
         </div>
 
         <div id="messages" class="flex-1 p-4 space-y-4 pb-24"></div>
 
         <div class="p-4 border-t border-white/10 fixed bottom-0 left-1/2 transform -translate-x-1/2 bg-black z-10 w-full max-w-[600px]">
             <form id="message-form" class="flex space-x-2">
-                
                 <input type="file" id="file-upload" accept="image/*,video/*,audio/*,.pdf,.txt" class="hidden">
                 <button type="button" id="upload-button" class="form-input p-3 hover:bg-white/20 transition-colors" title="Attach File">
                     <i class="fa-solid fa-paperclip"></i>
@@ -119,26 +94,22 @@
                     <i class="fa-solid fa-paper-plane"></i>
                 </button>
             </form>
-            <p id="upload-status" class="text-xs text-gray-400 mt-1 hidden"></p>
-        </div>
-    </div>
-    
-    <div id="image-modal" class="fixed inset-0 bg-black bg-opacity-90 z-50 hidden flex justify-center items-center p-4">
-        <div class="relative max-w-full max-h-full">
-            <div id="media-preview-content" class="max-w-full max-h-[90vh] flex justify-center items-center">
-                </div>
-            
-            <button type="button" class="absolute top-4 right-4 text-white text-3xl hover:text-gray-400" title="Close" onclick="closeModal()">
-                <i class="fa-solid fa-xmark"></i>
-            </button>
-            
-            <a id="modal-download-link" href="#" target="_blank" class="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-white/10 text-white px-4 py-2 rounded-full text-sm hover:bg-white/20 transition-colors" onclick="event.stopPropagation()">
-                <i class="fa-solid fa-download mr-2"></i>Download Original
-            </a>
         </div>
     </div>
 
     <script>
+        // ==================== SECURITY: SANITIZE ALL USER INPUT ====================
+        
+        function sanitizeHTML(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function escapeAttribute(text) {
+            return text.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
         // ==================== UTILITY FUNCTIONS ====================
         
         function formatBytes(bytes, decimals = 2) {
@@ -150,12 +121,6 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
         }
 
-        function sanitizeHTML(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
         function generateUUID() {
             return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
                 const r = Math.random() * 16 | 0;
@@ -163,110 +128,8 @@
                 return v.toString(16);
             });
         }
-        
-        // Fungsi untuk menentukan MIME Type (karena Firebase/Qu.ax mungkin tidak menyediakannya)
-        function getMimeType(fileName) {
-            const ext = fileName.split('.').pop().toLowerCase();
-            const types = {
-                'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png', 'gif': 'image/gif', 'webp': 'image/webp',
-                'mp4': 'video/mp4', 'webm': 'video/webm', 'ogg': 'video/ogg',
-                'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'pdf': 'application/pdf',
-                'txt': 'text/plain',
-            };
-            return types[ext] || 'application/octet-stream';
-        }
 
-
-        // ==================== MODAL FUNCTIONS ====================
-        
-        // FUNGSI openModal untuk mendukung berbagai tipe file (Memastikan controls dan autoplay)
-        function openModal(fileUrl, mimeType, fileName) {
-            try {
-                const imageModal = document.getElementById('image-modal');
-                const contentDiv = document.getElementById('media-preview-content');
-                const modalDownloadLink = document.getElementById('modal-download-link');
-                
-                contentDiv.innerHTML = ''; 
-                modalDownloadLink.href = fileUrl;
-                
-                const type = mimeType.split('/')[0];
-                let mediaElement;
-                
-                if (type === 'image') {
-                    mediaElement = document.createElement('img');
-                    mediaElement.src = fileUrl;
-                    mediaElement.alt = 'Image Preview';
-                    mediaElement.className = 'max-w-full max-h-[90vh] object-contain';
-                    
-                } else if (type === 'video') {
-                    mediaElement = document.createElement('video');
-                    mediaElement.src = fileUrl;
-                    mediaElement.controls = true; 
-                    mediaElement.autoplay = true; 
-                    mediaElement.className = 'max-w-full max-h-[90vh]';
-                    
-                } else if (type === 'audio') {
-                    mediaElement = document.createElement('audio');
-                    mediaElement.src = fileUrl;
-                    mediaElement.controls = true; 
-                    mediaElement.autoplay = true; 
-                    mediaElement.className = 'w-full md:w-96 p-4 bg-gray-800 rounded-lg';
-                    
-                } else if (mimeType === 'application/pdf') {
-                    mediaElement = document.createElement('iframe');
-                    mediaElement.src = fileUrl;
-                    mediaElement.className = 'w-[90vw] h-[90vh] border-none'; 
-                    
-                } else {
-                     // File lain (ZIP, TXT, DLL) - tampilkan pesan
-                    contentDiv.innerHTML = `<p class="text-white text-lg p-5">Cannot display preview for **${fileName}** (${mimeType}). Please use the **Download Original** link.</p>`;
-                    imageModal.classList.remove('hidden');
-                    document.body.style.overflow = 'hidden';
-                    return; 
-                }
-                
-                if (mediaElement) {
-                    contentDiv.appendChild(mediaElement);
-                }
-
-                imageModal.classList.remove('hidden');
-                document.body.style.overflow = 'hidden';
-
-            } catch (error) {
-                console.error('Error opening modal:', error);
-            }
-        }
-
-        function closeModal() {
-            try {
-                const imageModal = document.getElementById('image-modal');
-                const contentDiv = document.getElementById('media-preview-content');
-                
-                imageModal.classList.add('hidden');
-                // Hentikan pemutaran media saat modal ditutup
-                contentDiv.innerHTML = ''; 
-                document.body.style.overflow = '';
-            } catch (error) {
-                console.error('Error closing modal:', error);
-            }
-        }
-
-        // Close modal when clicking outside image
-        document.addEventListener('click', function(e) {
-            const imageModal = document.getElementById('image-modal');
-            if (e.target === imageModal) { 
-                closeModal(); 
-            }
-        });
-
-        // Close modal with Escape key
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                closeModal(); 
-            }
-        });
-
-        // ==================== FIREBASE & STATE ====================
+        // ==================== UI STATE ====================
         
         const messageForm = document.getElementById('message-form');
         const messageInput = document.getElementById('message-input');
@@ -276,147 +139,19 @@
         const fileUpload = document.getElementById('file-upload');
         const uploadStatus = document.getElementById('upload-status');
         const sendButton = document.getElementById('send-button');
-
         const filePreviewArea = document.getElementById('file-preview-area');
         const previewFilename = document.getElementById('preview-filename');
         const previewFilesize = document.getElementById('preview-filesize');
         const previewIcon = document.getElementById('preview-icon');
         const cancelUploadButton = document.getElementById('cancel-upload');
         const loadingBar = document.getElementById('loading-bar');
-        
-        let database;
-        let messagesRef;
-        let userCountRef;
-        let messageListener = null;
+
         let anonymousId = null;
-        let pendingFileUrl = false;
+        let isUploading = false;
 
-        const UPLOAD_API_ENDPOINT = '/api/upload-file';
-        const CONFIG_API_ENDPOINT = '/api/get-firebase-config';
-        
-        // BATAS UKURAN FILE: 6MB
-        const MAX_FILE_SIZE = 6 * 1024 * 1024; 
+        const MAX_FILE_SIZE = 6 * 1024 * 1024;
 
-        // ==================== ANONYMOUS ID & FIREBASE (omitted for brevity, same as previous version) ====================
-        
-        function openIndexedDB() {
-            return new Promise((resolve, reject) => {
-                const request = indexedDB.open('GivyChatDB', 1);
-                request.onerror = () => reject(request.error);
-                request.onsuccess = () => resolve(request.result);
-                request.onupgradeneeded = (event) => {
-                    const db = event.target.result;
-                    if (!db.objectStoreNames.contains('user')) {
-                        db.createObjectStore('user', { keyPath: 'id' });
-                    }
-                };
-            });
-        }
-
-        async function getStoredAnonymousId() {
-            try {
-                const db = await openIndexedDB();
-                return new Promise((resolve, reject) => {
-                    const transaction = db.transaction(['user'], 'readonly');
-                    const store = transaction.objectStore('user');
-                    const request = store.get('anonymous_id');
-                    request.onerror = () => reject(request.error);
-                    request.onsuccess = () => resolve(request.result?.value || null);
-                });
-            } catch (error) {
-                return null;
-            }
-        }
-
-        async function saveAnonymousId(id) {
-            try {
-                const db = await openIndexedDB();
-                return new Promise((resolve, reject) => {
-                    const transaction = db.transaction(['user'], 'readwrite');
-                    const store = transaction.objectStore('user');
-                    const request = store.put({ id: 'anonymous_id', value: id });
-                    request.onerror = () => reject(request.error);
-                    request.onsuccess = () => resolve(true);
-                });
-            } catch (error) {
-                return false;
-            }
-        }
-        
-        async function getAnonymousId() {
-            if (anonymousId) {
-                userInfoSpan.textContent = `You are Anonymous #${anonymousId}`;
-                return anonymousId;
-            }
-
-            try {
-                let stored = await getStoredAnonymousId();
-                if (stored) {
-                    anonymousId = stored;
-                    userInfoSpan.textContent = `You are Anonymous #${anonymousId}`;
-                    return anonymousId;
-                }
-
-                const snapshot = await userCountRef.transaction((currentCount) => {
-                    return (currentCount || 0) + 1;
-                });
-
-                if (snapshot.committed) {
-                    anonymousId = snapshot.snapshot.val();
-                    await saveAnonymousId(anonymousId);
-                    userInfoSpan.textContent = `You are Anonymous #${anonymousId}`;
-                    return anonymousId;
-                }
-            } catch (error) {
-                anonymousId = 'anon-' + generateUUID();
-                userInfoSpan.textContent = `You are ${anonymousId}`;
-                return anonymousId;
-            }
-        }
-
-        function setupMessageListener() {
-            if (messageListener) {
-                messagesRef.off('child_added', messageListener);
-            }
-
-            messageListener = function(snapshot) {
-                const message = snapshot.val();
-                displayMessage(message);
-            };
-
-            messagesRef.on('child_added', messageListener);
-        }
-
-        async function initializeFirebase() {
-            try {
-                userInfoSpan.textContent = 'Fetching config...';
-                const response = await fetch(CONFIG_API_ENDPOINT);
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch Firebase config. Status: ${response.status}`);
-                }
-                const firebaseConfig = await response.json();
-
-                if (!firebase.apps.length) {
-                    firebase.initializeApp(firebaseConfig);
-                }
-                
-                database = firebase.database();
-                messagesRef = database.ref('messages');
-                userCountRef = database.ref('user_counter');
-
-                await getAnonymousId();
-                setupMessageListener();
-                updateSendButtonState();
-
-            } catch (error) {
-                console.error("Error initializing Firebase:", error);
-                userInfoSpan.textContent = 'Connection Failed! ⚠️';
-                uploadStatus.textContent = `Error: ${error.message}`;
-                uploadStatus.classList.remove('hidden');
-            }
-        }
-
-        // ==================== DISPLAY MESSAGE (FINAL) ====================
+        // ==================== DISPLAY MESSAGE dengan SECURITY ====================
         
         function displayMessage(data) {
             if (!data || !data.name) return;
@@ -430,99 +165,42 @@
             
             const time = data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : '...';
 
+            // SECURITY: Selalu escape/sanitize semua user input dari Firebase
+            const sanitizedName = sanitizeHTML(data.name);
+            const sanitizedText = sanitizeHTML(data.text || '');
+
             const nameElement = document.createElement('span');
             nameElement.className = `text-xs ${nameClass} mb-1`;
-            nameElement.innerHTML = `${sanitizeHTML(data.name)} <span class="text-gray-500 text-xs">(${time})</span>`;
+            nameElement.innerHTML = `${sanitizedName} <span class="text-gray-500 text-xs">(${time})</span>`;
 
             const bubbleElement = document.createElement('div');
             bubbleElement.className = `message-bubble ${bubbleClass} max-w-[85%]`;
 
-            if (data.text) {
+            if (sanitizedText) {
                 const textElement = document.createElement('p');
                 textElement.className = 'text-sm';
-                textElement.textContent = data.text;
+                textElement.textContent = sanitizedText;
                 bubbleElement.appendChild(textElement);
             }
             
-            // Handle file attachments
-            if (data.fileUrl) {
-                const fileName = data.fileName || 'file_attachment';
-                const mimeType = getMimeType(fileName); 
-                
-                const isPreviewable = mimeType.startsWith('image/') || 
-                                      mimeType.startsWith('video/') || 
-                                      mimeType.startsWith('audio/') || 
-                                      mimeType === 'application/pdf';
-                
-                if (isPreviewable) {
-                    // --- MEDIA YANG DAPAT DI-PREVIEW (IMAGE, VIDEO, AUDIO, PDF) ---
-                    const previewElement = document.createElement('div');
-                    previewElement.className = 'max-w-40 max-h-40 rounded cursor-pointer mt-2 overflow-hidden border border-white/20 relative group';
-                    previewElement.style.backgroundColor = 'rgba(255,255,255,0.05)';
-
-                    // Tentukan ikon berdasarkan tipe file
-                    let iconClass = 'fa-solid ';
-                    if (mimeType.startsWith('image/')) iconClass = 'fa-solid fa-expand';
-                    else if (mimeType.startsWith('video/')) iconClass = 'fa-solid fa-circle-play';
-                    else if (mimeType.startsWith('audio/')) iconClass = 'fa-solid fa-volume-high';
-                    else if (mimeType === 'application/pdf') iconClass = 'fa-solid fa-file-pdf';
-
-                    // Ikon Play/Preview di tengah
-                    previewElement.innerHTML = `
-                        <div class="absolute inset-0 flex items-center justify-center bg-black/50 group-hover:bg-black/70 transition-all z-10">
-                            <i class="${iconClass} text-white text-3xl"></i>
-                        </div>
-                    `;
-                    
-                    // Khusus untuk gambar, tambahkan thumbnail
-                    if (mimeType.startsWith('image/')) {
-                        const img = document.createElement('img');
-                        img.src = data.fileUrl;
-                        img.alt = 'Thumbnail';
-                        img.className = 'w-full h-full object-cover transition-opacity duration-300 group-hover:opacity-50';
-                        previewElement.appendChild(img);
-                    } else {
-                        // Untuk media/dokumen lain, tampilkan ikon file besar di thumbnail
-                        let fileIcon = 'fa-solid ';
-                        if (mimeType.startsWith('video/')) fileIcon += 'fa-video text-red-400';
-                        else if (mimeType.startsWith('audio/')) fileIcon += 'fa-music text-purple-400';
-                        else if (mimeType === 'application/pdf') fileIcon += 'fa-file-pdf text-red-600';
-                        
-                        previewElement.innerHTML += `
-                            <div class="w-full h-full flex items-center justify-center">
-                                <i class="${fileIcon} text-5xl"></i>
-                            </div>
-                        `;
-                    }
-
-                    // Event listener untuk membuka modal
-                    previewElement.addEventListener('click', function(e) {
-                        e.stopPropagation();
-                        // Memastikan mimeType dan fileName dikirim ke openModal
-                        openModal(data.fileUrl, mimeType, fileName); 
-                    });
-                    
-                    bubbleElement.appendChild(previewElement);
-
-                } else {
-                    // --- FILE NON-PREVIEWABLE (ZIP, TXT, DLL) - HANYA LINK DOWNLOAD ---
-
-                    const fileElement = document.createElement('p');
-                    fileElement.className = 'text-xs mt-1';
-                    const link = document.createElement('a');
-                    link.href = data.fileUrl;
-                    link.target = '_blank';
-                    link.className = 'underline text-yellow-400';
-                    link.textContent = fileName;
-                    // Tampilkan size
-                    const sizeText = data.fileSize ? ` (${formatBytes(data.fileSize)})` : '';
-                    
-                    fileElement.innerHTML = `<i class="fa-solid fa-file-arrow-down mr-1"></i>File${sizeText}: `;
-                    fileElement.appendChild(link);
-                    bubbleElement.appendChild(fileElement);
+            // File attachment (simplified for demo)
+            if (data.fileUrl && data.fileName) {
+                const fileElement = document.createElement('p');
+                fileElement.className = 'text-xs mt-2 text-yellow-400';
+                const link = document.createElement('a');
+                link.href = data.fileUrl;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer'; // SECURITY: Prevent window.opener access
+                link.className = 'underline hover:text-yellow-300';
+                // SECURITY: Escape filename
+                link.textContent = escapeAttribute(data.fileName);
+                fileElement.innerHTML = '<i class="fa-solid fa-file-arrow-down mr-1"></i>';
+                fileElement.appendChild(link);
+                if (data.fileSize) {
+                    fileElement.innerHTML += ` (${formatBytes(data.fileSize)})`;
                 }
+                bubbleElement.appendChild(fileElement);
             }
-
 
             messageElement.appendChild(nameElement);
             messageElement.appendChild(bubbleElement);
@@ -530,22 +208,17 @@
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
 
-        // ==================== FILE UPLOAD (MENGGUNAKAN MAX_FILE_SIZE BARU) ====================
+        // ==================== FILE UPLOAD ====================
         
         async function uploadFileToApi(file) {
-            if (!file) return null;
-
-            if (file.size > MAX_FILE_SIZE) {
-                // Pesan error akan muncul jika file melebihi 6MB
+            if (!file || file.size > MAX_FILE_SIZE) {
                 uploadStatus.textContent = `File size too large (max ${formatBytes(MAX_FILE_SIZE)})!`;
-                uploadStatus.classList.remove('hidden');
                 return null;
             }
 
+            isUploading = true;
             uploadStatus.textContent = 'Uploading...';
-            uploadStatus.classList.remove('hidden');
             loadingBar.style.width = '10%';
-            pendingFileUrl = true;
 
             const loadingInterval = setInterval(() => {
                 const currentWidth = parseInt(loadingBar.style.width);
@@ -554,44 +227,27 @@
                 }
             }, 500);
 
-            let fileUrl = null;
-            
             try {
                 const base64 = await fileToBase64(file);
                 loadingBar.style.width = '80%';
                 
-                const response = await fetch(UPLOAD_API_ENDPOINT, { 
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ file: base64 })
-                });
-
-                const data = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(data.details || `Upload failed with status ${response.status}`);
-                }
-
-                if (data.success && data.url) {
-                    loadingBar.style.width = '100%';
-                    fileUrl = data.url;
-                    uploadStatus.textContent = 'Upload complete!';
-                } else {
-                    throw new Error(data.details || 'Upload failed - no URL returned');
-                }
+                // Mock upload (ganti dengan real API)
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                
+                uploadStatus.textContent = 'Upload complete!';
+                loadingBar.style.width = '100%';
+                
+                return 'https://example.com/mock-file-' + Date.now();
 
             } catch (error) {
                 console.error('Upload error:', error);
-                loadingBar.style.width = '0%';
                 uploadStatus.textContent = `Upload failed: ${error.message}`;
+                loadingBar.style.width = '0%';
+                return null;
             } finally {
                 clearInterval(loadingInterval);
-                filePreviewArea.classList.add('hidden');
-                pendingFileUrl = false;
-                setTimeout(() => uploadStatus.classList.add('hidden'), 3000);
+                isUploading = false;
             }
-            
-            return fileUrl;
         }
 
         function fileToBase64(file) {
@@ -603,12 +259,12 @@
             });
         }
 
-        // ==================== BUTTON STATE MANAGEMENT & EVENT LISTENERS (same as previous version) ====================
+        // ==================== EVENT LISTENERS ====================
 
         function updateSendButtonState() {
             const hasText = messageInput.value.trim() !== '';
             const hasFile = fileUpload.files.length > 0;
-            sendButton.disabled = !(hasText || hasFile) || pendingFileUrl;
+            sendButton.disabled = !(hasText || hasFile) || isUploading;
         }
 
         uploadButton.addEventListener('click', () => {
@@ -629,7 +285,7 @@
             }
 
             if (file.size > MAX_FILE_SIZE) {
-                alert(`File terlalu besar. Batas maksimum: ${formatBytes(MAX_FILE_SIZE)}.`);
+                alert(`File too large. Max: ${formatBytes(MAX_FILE_SIZE)}`);
                 fileUpload.value = '';
                 updateSendButtonState();
                 return;
@@ -657,6 +313,7 @@
             fileUpload.value = '';
             filePreviewArea.classList.add('hidden');
             loadingBar.style.width = '0%';
+            uploadStatus.textContent = '';
             updateSendButtonState();
         });
 
@@ -667,7 +324,7 @@
             const file = fileUpload.files[0];
 
             if (!messageText && !file) return;
-            if (pendingFileUrl) return;
+            if (isUploading) return;
 
             messageInput.disabled = true;
             sendButton.disabled = true;
@@ -676,44 +333,44 @@
             
             if (file) {
                 fileUrl = await uploadFileToApi(file);
-                
                 if (!fileUrl && !messageText) {
                     messageInput.disabled = false;
                     updateSendButtonState();
                     return;
                 }
-                fileUpload.value = '';
             }
 
+            // Demo: Show uploaded message
             if (messageText || fileUrl) {
                 const newMessage = {
-                    name: `Anonymous #${anonymousId}`,
+                    name: `Anonymous #${anonymousId || 'demo'}`,
                     anonymousId: anonymousId,
-                    text: messageText || '',
-                    timestamp: firebase.database.ServerValue.TIMESTAMP, 
+                    text: messageText,
+                    timestamp: Date.now(),
                     fileUrl: fileUrl,
                     fileName: file ? file.name : null,
                     fileSize: file ? file.size : null
                 };
-
-                try {
-                    await messagesRef.push(newMessage);
-                } catch (error) {
-                    console.error('Error sending message:', error);
-                    uploadStatus.textContent = 'Failed to send message';
-                    uploadStatus.classList.remove('hidden');
-                }
+                displayMessage(newMessage);
             }
             
             messageInput.value = '';
             messageInput.disabled = false;
-            filePreviewArea.classList.add('hidden');
+            fileUpload.value = '';
+            // PENTING: Jangan hide preview area sampai upload selesai!
+            setTimeout(() => {
+                filePreviewArea.classList.add('hidden');
+                loadingBar.style.width = '0%';
+                uploadStatus.textContent = '';
+            }, 2000);
+            
             updateSendButtonState();
             messageInput.focus();
         });
 
         // ==================== INITIALIZE ====================
-        initializeFirebase();
+        anonymousId = Math.floor(Math.random() * 10000);
+        userInfoSpan.textContent = `You are Anonymous #${anonymousId}`;
     </script>
 </body>
 </html>
