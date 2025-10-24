@@ -32,7 +32,10 @@
             background-color: rgba(255, 255, 255, 0.05);
             border-radius: 8px;
             padding: 8px 12px;
-            word-wrap: break-word;
+            /* PROPERTI UNTUK MENGATASI WORD BREAK (word-wrap sudah ada di kode sebelumnya) */
+            word-wrap: break-word; 
+            word-break: break-word; 
+            overflow-wrap: break-word; /* Kompatibilitas lintas browser */
         }
         #messages {
             overflow-y: auto;
@@ -107,7 +110,10 @@
                     <i class="fa-solid fa-paperclip"></i>
                 </button>
 
-                <input type="text" id="message-input" placeholder="Type a message..." class="form-input flex-1 py-3 px-4 text-sm">
+                <input type="text" id="message-input" 
+                       placeholder="Type a message..." 
+                       class="form-input flex-1 py-3 px-4 text-sm"
+                       autocomplete="off">
                 
                 <button type="submit" id="send-button" class="bg-white/10 text-white p-3 hover:bg-white/20 transition-colors" disabled>
                     <i class="fa-solid fa-paper-plane"></i>
@@ -288,7 +294,7 @@
         const UPLOAD_API_ENDPOINT = '/api/upload-file';
         const CONFIG_API_ENDPOINT = '/api/get-firebase-config';
         
-        // BATAS UKURAN FILE DIUBAH KE 6MB
+        // BATAS UKURAN FILE: 6MB
         const MAX_FILE_SIZE = 6 * 1024 * 1024; 
 
         // ==================== ANONYMOUS ID & FIREBASE (omitted for brevity, same as previous version) ====================
