@@ -12,13 +12,10 @@
         body {
             font-family: 'Cousine', monospace;
             background-color: #000;
-            /* Pastikan body setinggi layar penuh */
-            height: 100vh;
         }
         .chat-container {
             max-width: 600px;
-            /* Hapus height: 100vh; karena sudah dihandle oleh h-full di HTML dan Flexbox */
-            /* Menggunakan h-full di HTML */
+            height: 100vh; /* Dikembalikan ke 100vh untuk Flexbox */
         }
         .form-input {
             background-color: rgba(255,255,255,.1);
@@ -37,11 +34,11 @@
             padding: 8px 12px;
             word-wrap: break-word; 
             word-break: break-word; 
-            overflow-wrap: break-word;
+            overflow-wrap: break-word; 
         }
         #messages {
             overflow-y: auto;
-            /* Hapus max-height atau tinggi tetap, biarkan flex-1 yang mengatur */
+            /* Flex-1 akan mengatur tinggi secara otomatis */
             scroll-behavior: smooth;
         }
         #messages::-webkit-scrollbar { width: 6px; }
@@ -77,10 +74,9 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 </head>
+<body class="p-0 text-white min-h-screen flex justify-center">
 
-<body class="p-0 text-white h-screen flex justify-center">
-
-    <div class="chat-container flex flex-col mx-auto h-full">
+    <div class="chat-container flex flex-col mx-auto h-full pb-24"> 
         <div class="p-4 border-b border-white/10 flex items-center justify-between sticky top-0 bg-black z-10">
             <h1 class="text-xl font-bold tracking-wider text-white">#chat</h1>
             <span id="user-info" class="text-sm text-gray-400">Connecting...</span>
@@ -102,9 +98,11 @@
             </div>
         </div>
 
-        <div id="messages" class="flex-1 p-4 space-y-4"></div>
+        <div id="messages" class="flex-1 p-4 space-y-4"></div> 
 
-        <div class="p-4 border-t border-white/10 bg-black z-10 w-full max-w-[600px] mx-auto">
+        <div class="p-4 border-t border-white/10 fixed bottom-0 bg-black z-10 w-full" 
+             style="left: 50%; transform: translateX(-50%); max-width: 600px;">
+             
             <form id="message-form" class="flex space-x-2">
                 
                 <input type="file" id="file-upload" accept="image/*,video/*,audio/*,.pdf,.txt" class="hidden">
@@ -141,6 +139,8 @@
     </div>
 
     <script>
+        // ... (Kode Javascript tetap sama) ...
+        
         // ==================== UTILITY FUNCTIONS ====================
         
         function formatBytes(bytes, decimals = 2) {
