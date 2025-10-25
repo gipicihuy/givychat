@@ -541,6 +541,16 @@
                         audio.src = data.fileUrl;
                         audio.controls = true;
                         
+                        // Auto-pause other audio saat ini diplay
+                        audio.addEventListener('play', function() {
+                            const allAudios = messagesDiv.querySelectorAll('audio');
+                            allAudios.forEach(a => {
+                                if (a !== audio) {
+                                    a.pause();
+                                }
+                            });
+                        });
+                        
                         audioCard.appendChild(title);
                         audioCard.appendChild(audio);
                         bubbleElement.appendChild(audioCard);
@@ -696,6 +706,9 @@
             }
             
             filePreviewArea.classList.remove('hidden');
+            
+            // Scroll ke atas biar preview langsung terlihat
+            messagesDiv.scrollTop = 0;
             
             // Truncate filename jika terlalu panjang
             let displayName = file.name;
