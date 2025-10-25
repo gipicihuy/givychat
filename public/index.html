@@ -58,7 +58,6 @@
             opacity: 0.8;
         }
 
-        /* Style untuk media dalam modal */
         #media-preview-content img,
         #media-preview-content video {
             max-width: 100%;
@@ -70,7 +69,6 @@
             border-radius: 8px;
         }
 
-        /* Preview cards untuk video dan audio */
         .media-preview-card {
             background: rgba(255,255,255,0.08);
             border: 1px solid rgba(255,255,255,0.15);
@@ -111,7 +109,6 @@
             border-radius: 8px;
         }
 
-        /* Custom Audio Player Styling */
         .media-preview-card audio {
             width: 100%;
             border-radius: 8px;
@@ -261,7 +258,7 @@
                     mediaElement.className = 'w-[90vw] h-[90vh] border-none'; 
                     
                 } else {
-                    contentDiv.innerHTML = `<p class="text-white text-lg p-5">Cannot display preview for **${fileName}** (${mimeType}). Please use the **Download Original** link.</p>`;
+                    contentDiv.innerHTML = `<p class="text-white text-lg p-5">Cannot display preview for <strong>${fileName}</strong> (${mimeType}). Please use the <strong>Download</strong> link.</p>`;
                     imageModal.classList.remove('hidden');
                     document.body.style.overflow = 'hidden';
                     return; 
@@ -330,11 +327,8 @@
         let anonymousId = null;
         let pendingFileUrl = false;
 
-        const UPLOAD_API_ENDPOINT = '/api/upload-file';
         const CONFIG_API_ENDPOINT = '/api/get-firebase-config';
         
-        const MAX_FILE_SIZE = 10 * 1024 * 1024; 
-
         function openIndexedDB() {
             return new Promise((resolve, reject) => {
                 const request = indexedDB.open('GivyChatDB', 1);
@@ -452,7 +446,7 @@
             }
         }
 
-        // ==================== DISPLAY MESSAGE (IMPROVED) ====================
+        // ==================== DISPLAY MESSAGE ====================
         
         function displayMessage(data) {
             if (!data || !data.name) return;
@@ -492,7 +486,6 @@
                 
                 if (isPreviewable) {
                     if (mimeType.startsWith('image/')) {
-                        // --- IMAGE PREVIEW - CLICKABLE THUMBNAIL ---
                         const previewElement = document.createElement('div');
                         previewElement.className = 'max-w-40 max-h-40 rounded cursor-pointer mt-2 overflow-hidden border border-white/20';
                         previewElement.style.backgroundColor = 'rgba(255,255,255,0.05)';
@@ -511,7 +504,6 @@
                         bubbleElement.appendChild(previewElement);
 
                     } else if (mimeType.startsWith('video/')) {
-                        // --- VIDEO PLAYER CARD ---
                         const videoCard = document.createElement('div');
                         videoCard.className = 'media-preview-card video-card';
                         
@@ -529,7 +521,6 @@
                         bubbleElement.appendChild(videoCard);
 
                     } else if (mimeType.startsWith('audio/')) {
-                        // --- AUDIO PLAYER CARD ---
                         const audioCard = document.createElement('div');
                         audioCard.className = 'media-preview-card audio-card';
                         
@@ -541,7 +532,6 @@
                         audio.src = data.fileUrl;
                         audio.controls = true;
                         
-                        // Auto-pause other audio saat ini diplay
                         audio.addEventListener('play', function() {
                             const allAudios = messagesDiv.querySelectorAll('audio');
                             allAudios.forEach(a => {
@@ -556,7 +546,6 @@
                         bubbleElement.appendChild(audioCard);
 
                     } else if (mimeType === 'application/pdf') {
-                        // --- PDF LINK ---
                         const pdfElement = document.createElement('p');
                         pdfElement.className = 'text-xs mt-1';
                         const link = document.createElement('a');
@@ -575,7 +564,6 @@
                     }
 
                 } else {
-                    // --- FILE NON-PREVIEWABLE ---
                     const fileElement = document.createElement('p');
                     fileElement.className = 'text-xs mt-1';
                     const link = document.createElement('a');
@@ -598,82 +586,94 @@
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
 
-        // ==================== FILE UPLOAD ====================
+        // ==================== FILE UPLOAD - DIRECT TO QU.AX ====================
         
         async function uploadFileToApi(file) {
             if (!file) return null;
 
-            if (file.size > MAX_FILE_SIZE) {
-                uploadStatus.textContent = `File size too large (max ${formatBytes(MAX_FILE_SIZE)})!`;
-                uploadStatus.classList.remove('hidden');
-                return null;
-            }
-
-            uploadStatus.textContent = 'Uploading...';
+            uploadStatus.textContent = '📤 Uploading...';
             uploadStatus.classList.remove('hidden');
             loadingBar.style.width = '10%';
             pendingFileUrl = true;
 
-            const loadingInterval = setInterval(() => {
-                const currentWidth = parseInt(loadingBar.style.width);
-                if (currentWidth < 90) {
-                    loadingBar.style.width = `${currentWidth + 5}%`;
-                }
-            }, 500);
-
             let fileUrl = null;
             
             try {
-                const base64 = await fileToBase64(file);
-                console.log('File type:', file.type, 'File name:', file.name);
-                loadingBar.style.width = '80%';
-                
-                const response = await fetch(UPLOAD_API_ENDPOINT, { 
+                const formData = new FormData();
+                formData.append('files[]', file);
+
+                console.log(`Uploading file: ${file.name}, size: ${formatBytes(file.size)}, type: ${file.type}`);
+
+                const progressInterval = setInterval(() => {
+                    const currentWidth = parseInt(loadingBar.style.width);
+                    if (currentWidth < 90) {
+                        loadingBar.style.width = `${currentWidth + Math.random() * 15}%`;
+                    }
+                }, 500);
+
+                const response = await fetch('https://qu.ax/upload.php', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ file: base64 })
+                    body: formData
                 });
 
-                console.log('Upload response status:', response.status);
-                const data = await response.json();
-                console.log('Upload response data:', data);
+                clearInterval(progressInterval);
+                console.log('Qu.ax response status:', response.status);
+                const contentType = response.headers.get('content-type');
 
                 if (!response.ok) {
-                    throw new Error(data.details || data.error || `Upload failed with status ${response.status}`);
+                    const errorText = await response.text();
+                    console.error(`Qu.ax error ${response.status}: ${errorText.substring(0, 500)}`);
+                    
+                    if (response.status === 413) {
+                        throw new Error('File terlalu besar untuk Qu.ax (max ~256MB)');
+                    } else if (response.status === 400) {
+                        throw new Error('Format file tidak valid untuk Qu.ax');
+                    } else if (response.status >= 500) {
+                        throw new Error('Qu.ax server error. Coba lagi nanti.');
+                    } else {
+                        throw new Error(`Qu.ax error ${response.status}`);
+                    }
                 }
 
-                if (data.success && data.url) {
+                let quaxData;
+                try {
+                    if (contentType && contentType.includes('application/json')) {
+                        quaxData = await response.json();
+                    } else {
+                        const responseText = await response.text();
+                        console.error(`Qu.ax returned non-JSON: ${responseText.substring(0, 500)}`);
+                        throw new Error('Qu.ax returned invalid response format');
+                    }
+                } catch (e) {
+                    console.error(`Failed to parse Qu.ax response: ${e.message}`);
+                    throw new Error('Invalid response from Qu.ax - possibly server error');
+                }
+
+                console.log('Qu.ax response:', quaxData);
+
+                if (quaxData.success && quaxData.files && quaxData.files.length > 0) {
                     loadingBar.style.width = '100%';
-                    fileUrl = data.url;
-                    uploadStatus.textContent = 'Upload complete!';
+                    fileUrl = quaxData.files[0].url;
+                    uploadStatus.textContent = '✅ Upload berhasil!';
                 } else {
-                    throw new Error(data.details || data.error || 'Upload failed - no URL returned');
+                    const errorReason = quaxData.error || 'Unknown error';
+                    throw new Error(`Qu.ax returned: ${errorReason}`);
                 }
 
             } catch (error) {
                 console.error('Upload error:', error);
                 loadingBar.style.width = '0%';
-                uploadStatus.textContent = `Upload failed: ${error.message}`;
+                uploadStatus.textContent = `❌ ${error.message}`;
             } finally {
-                clearInterval(loadingInterval);
                 filePreviewArea.classList.add('hidden');
                 pendingFileUrl = false;
-                setTimeout(() => uploadStatus.classList.add('hidden'), 3000);
+                setTimeout(() => uploadStatus.classList.add('hidden'), 4000);
             }
             
             return fileUrl;
         }
 
-        function fileToBase64(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = error => reject(error);
-            });
-        }
-
-        // ==================== BUTTON STATE MANAGEMENT & EVENT LISTENERS ====================
+        // ==================== BUTTON STATE & EVENT LISTENERS ====================
 
         function updateSendButtonState() {
             const hasText = messageInput.value.trim() !== '';
@@ -697,20 +697,10 @@
                 updateSendButtonState();
                 return;
             }
-
-            if (file.size > MAX_FILE_SIZE) {
-                alert(`File terlalu besar. Batas maksimum: ${formatBytes(MAX_FILE_SIZE)}.`);
-                fileUpload.value = '';
-                updateSendButtonState();
-                return;
-            }
             
             filePreviewArea.classList.remove('hidden');
-            
-            // Scroll ke atas biar preview langsung terlihat
             messagesDiv.scrollTop = 0;
             
-            // Truncate filename jika terlalu panjang
             let displayName = file.name;
             if (displayName.length > 30) {
                 const ext = displayName.split('.').pop();
@@ -719,7 +709,7 @@
             }
             
             previewFilename.textContent = displayName;
-            previewFilename.title = file.name; // Full name di tooltip
+            previewFilename.title = file.name;
             previewFilesize.textContent = `(${formatBytes(file.size)})`;
 
             const type = file.type.split('/')[0];
