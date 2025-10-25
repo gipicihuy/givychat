@@ -97,10 +97,35 @@
             gap: 6px;
         }
 
-        .media-preview-card video,
+        .media-preview-card video {
+            width: 100%;
+            border-radius: 8px;
+        }
+
+        /* Custom Audio Player Styling */
         .media-preview-card audio {
             width: 100%;
             border-radius: 8px;
+            filter: brightness(1.2);
+        }
+
+        /* Webkit browsers */
+        .media-preview-card audio::-webkit-media-controls-panel {
+            background-color: rgba(100, 50, 200, 0.3);
+        }
+
+        .media-preview-card audio::-webkit-media-controls-current-time-display,
+        .media-preview-card audio::-webkit-media-controls-time-remaining-display {
+            color: #a78bfa;
+        }
+
+        .media-preview-card audio::-webkit-media-controls-play-button {
+            filter: brightness(1.5);
+        }
+
+        /* Firefox */
+        .media-preview-card audio {
+            accent-color: #a78bfa;
         }
     </style>
     
