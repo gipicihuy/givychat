@@ -86,6 +86,7 @@
 
         .audio-card {
             background: linear-gradient(135deg, rgba(147,51,234,0.2) 0%, rgba(147,51,234,0.1) 100%);
+            max-width: 280px;
         }
 
         .media-preview-card .media-title {
@@ -95,6 +96,14 @@
             display: flex;
             align-items: center;
             gap: 6px;
+            overflow: hidden;
+        }
+
+        .media-preview-card .media-title span {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 220px;
         }
 
         .media-preview-card video {
@@ -687,7 +696,17 @@
             }
             
             filePreviewArea.classList.remove('hidden');
-            previewFilename.textContent = file.name;
+            
+            // Truncate filename jika terlalu panjang
+            let displayName = file.name;
+            if (displayName.length > 30) {
+                const ext = displayName.split('.').pop();
+                const nameWithoutExt = displayName.substring(0, displayName.lastIndexOf('.'));
+                displayName = nameWithoutExt.substring(0, 20) + '...' + ext;
+            }
+            
+            previewFilename.textContent = displayName;
+            previewFilename.title = file.name; // Full name di tooltip
             previewFilesize.textContent = `(${formatBytes(file.size)})`;
 
             const type = file.type.split('/')[0];
