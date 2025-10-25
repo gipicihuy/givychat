@@ -32,10 +32,9 @@
             background-color: rgba(255, 255, 255, 0.05);
             border-radius: 8px;
             padding: 8px 12px;
-            /* PROPERTI UNTUK MENGATASI WORD BREAK (word-wrap sudah ada di kode sebelumnya) */
             word-wrap: break-word; 
             word-break: break-word; 
-            overflow-wrap: break-word; /* Kompatibilitas lintas browser */
+            overflow-wrap: break-word;
         }
         #messages {
             overflow-y: auto;
@@ -68,6 +67,39 @@
         }
         #media-preview-content video {
             background-color: black;
+            border-radius: 8px;
+        }
+
+        /* Preview cards untuk video dan audio */
+        .media-preview-card {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 12px;
+            padding: 12px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+
+        .video-card {
+            background: linear-gradient(135deg, rgba(220,38,38,0.2) 0%, rgba(220,38,38,0.1) 100%);
+        }
+
+        .audio-card {
+            background: linear-gradient(135deg, rgba(147,51,234,0.2) 0%, rgba(147,51,234,0.1) 100%);
+        }
+
+        .media-preview-card .media-title {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .media-preview-card video,
+        .media-preview-card audio {
+            width: 100%;
             border-radius: 8px;
         }
     </style>
@@ -163,7 +195,6 @@
             });
         }
         
-        // Fungsi untuk menentukan MIME Type (karena Firebase/Qu.ax mungkin tidak menyediakannya)
         function getMimeType(fileName) {
             const ext = fileName.split('.').pop().toLowerCase();
             const types = {
@@ -175,10 +206,8 @@
             return types[ext] || 'application/octet-stream';
         }
 
-
         // ==================== MODAL FUNCTIONS ====================
         
-        // FUNGSI openModal untuk mendukung berbagai tipe file (Memastikan controls dan autoplay)
         function openModal(fileUrl, mimeType, fileName) {
             try {
                 const imageModal = document.getElementById('image-modal');
@@ -217,7 +246,6 @@
                     mediaElement.className = 'w-[90vw] h-[90vh] border-none'; 
                     
                 } else {
-                     // File lain (ZIP, TXT, DLL) - tampilkan pesan
                     contentDiv.innerHTML = `<p class="text-white text-lg p-5">Cannot display preview for **${fileName}** (${mimeType}). Please use the **Download Original** link.</p>`;
                     imageModal.classList.remove('hidden');
                     document.body.style.overflow = 'hidden';
@@ -242,7 +270,6 @@
                 const contentDiv = document.getElementById('media-preview-content');
                 
                 imageModal.classList.add('hidden');
-                // Hentikan pemutaran media saat modal ditutup
                 contentDiv.innerHTML = ''; 
                 document.body.style.overflow = '';
             } catch (error) {
@@ -250,7 +277,6 @@
             }
         }
 
-        // Close modal when clicking outside image
         document.addEventListener('click', function(e) {
             const imageModal = document.getElementById('image-modal');
             if (e.target === imageModal) { 
@@ -258,7 +284,6 @@
             }
         });
 
-        // Close modal with Escape key
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
                 closeModal(); 
@@ -293,11 +318,8 @@
         const UPLOAD_API_ENDPOINT = '/api/upload-file';
         const CONFIG_API_ENDPOINT = '/api/get-firebase-config';
         
-        // BATAS UKURAN FILE: 6MB
         const MAX_FILE_SIZE = 6 * 1024 * 1024; 
 
-        // ==================== ANONYMOUS ID & FIREBASE (omitted for brevity, same as previous version) ====================
-        
         function openIndexedDB() {
             return new Promise((resolve, reject) => {
                 const request = indexedDB.open('GivyChatDB', 1);
@@ -415,7 +437,7 @@
             }
         }
 
-        // ==================== DISPLAY MESSAGE (FINAL) ====================
+        // ==================== DISPLAY MESSAGE (IMPROVED) ====================
         
         function displayMessage(data) {
             if (!data || !data.name) return;
@@ -454,66 +476,89 @@
                                       mimeType === 'application/pdf';
                 
                 if (isPreviewable) {
-                    // --- MEDIA YANG DAPAT DI-PREVIEW (IMAGE, VIDEO, AUDIO, PDF) ---
-                    const previewElement = document.createElement('div');
-                    previewElement.className = 'max-w-40 max-h-40 rounded cursor-pointer mt-2 overflow-hidden border border-white/20 relative group';
-                    previewElement.style.backgroundColor = 'rgba(255,255,255,0.05)';
-
-                    // Tentukan ikon berdasarkan tipe file
-                    let iconClass = 'fa-solid ';
-                    if (mimeType.startsWith('image/')) iconClass = 'fa-solid fa-expand';
-                    else if (mimeType.startsWith('video/')) iconClass = 'fa-solid fa-circle-play';
-                    else if (mimeType.startsWith('audio/')) iconClass = 'fa-solid fa-volume-high';
-                    else if (mimeType === 'application/pdf') iconClass = 'fa-solid fa-file-pdf';
-
-                    // Ikon Play/Preview di tengah
-                    previewElement.innerHTML = `
-                        <div class="absolute inset-0 flex items-center justify-center bg-black/50 group-hover:bg-black/70 transition-all z-10">
-                            <i class="${iconClass} text-white text-3xl"></i>
-                        </div>
-                    `;
-                    
-                    // Khusus untuk gambar, tambahkan thumbnail
                     if (mimeType.startsWith('image/')) {
+                        // --- IMAGE PREVIEW - CLICKABLE THUMBNAIL ---
+                        const previewElement = document.createElement('div');
+                        previewElement.className = 'max-w-40 max-h-40 rounded cursor-pointer mt-2 overflow-hidden border border-white/20';
+                        previewElement.style.backgroundColor = 'rgba(255,255,255,0.05)';
+
                         const img = document.createElement('img');
                         img.src = data.fileUrl;
-                        img.alt = 'Thumbnail';
-                        img.className = 'w-full h-full object-cover transition-opacity duration-300 group-hover:opacity-50';
+                        img.alt = 'Image';
+                        img.className = 'w-full h-full object-cover transition-opacity duration-300 hover:opacity-80';
                         previewElement.appendChild(img);
-                    } else {
-                        // Untuk media/dokumen lain, tampilkan ikon file besar di thumbnail
-                        let fileIcon = 'fa-solid ';
-                        if (mimeType.startsWith('video/')) fileIcon += 'fa-video text-red-400';
-                        else if (mimeType.startsWith('audio/')) fileIcon += 'fa-music text-purple-400';
-                        else if (mimeType === 'application/pdf') fileIcon += 'fa-file-pdf text-red-600';
+
+                        previewElement.addEventListener('click', function(e) {
+                            e.stopPropagation();
+                            openModal(data.fileUrl, mimeType, fileName); 
+                        });
                         
-                        previewElement.innerHTML += `
-                            <div class="w-full h-full flex items-center justify-center">
-                                <i class="${fileIcon} text-5xl"></i>
-                            </div>
-                        `;
+                        bubbleElement.appendChild(previewElement);
+
+                    } else if (mimeType.startsWith('video/')) {
+                        // --- VIDEO PLAYER CARD ---
+                        const videoCard = document.createElement('div');
+                        videoCard.className = 'media-preview-card video-card';
+                        
+                        const title = document.createElement('div');
+                        title.className = 'media-title';
+                        title.innerHTML = '<i class="fa-solid fa-video text-red-400"></i><span>Video</span>';
+                        
+                        const video = document.createElement('video');
+                        video.src = data.fileUrl;
+                        video.controls = true;
+                        video.className = 'bg-black';
+                        
+                        videoCard.appendChild(title);
+                        videoCard.appendChild(video);
+                        bubbleElement.appendChild(videoCard);
+
+                    } else if (mimeType.startsWith('audio/')) {
+                        // --- AUDIO PLAYER CARD ---
+                        const audioCard = document.createElement('div');
+                        audioCard.className = 'media-preview-card audio-card';
+                        
+                        const title = document.createElement('div');
+                        title.className = 'media-title';
+                        title.innerHTML = `<i class="fa-solid fa-music text-purple-400"></i><span>${sanitizeHTML(fileName)}</span>`;
+                        
+                        const audio = document.createElement('audio');
+                        audio.src = data.fileUrl;
+                        audio.controls = true;
+                        
+                        audioCard.appendChild(title);
+                        audioCard.appendChild(audio);
+                        bubbleElement.appendChild(audioCard);
+
+                    } else if (mimeType === 'application/pdf') {
+                        // --- PDF LINK ---
+                        const pdfElement = document.createElement('p');
+                        pdfElement.className = 'text-xs mt-1';
+                        const link = document.createElement('a');
+                        link.href = data.fileUrl;
+                        link.target = '_blank';
+                        link.className = 'underline text-yellow-400 cursor-pointer hover:text-yellow-300';
+                        link.textContent = fileName;
+                        link.onclick = (e) => {
+                            e.stopPropagation();
+                            openModal(data.fileUrl, mimeType, fileName);
+                        };
+                        
+                        pdfElement.innerHTML = '<i class="fa-solid fa-file-pdf mr-1"></i>';
+                        pdfElement.appendChild(link);
+                        bubbleElement.appendChild(pdfElement);
                     }
 
-                    // Event listener untuk membuka modal
-                    previewElement.addEventListener('click', function(e) {
-                        e.stopPropagation();
-                        // Memastikan mimeType dan fileName dikirim ke openModal
-                        openModal(data.fileUrl, mimeType, fileName); 
-                    });
-                    
-                    bubbleElement.appendChild(previewElement);
-
                 } else {
-                    // --- FILE NON-PREVIEWABLE (ZIP, TXT, DLL) - HANYA LINK DOWNLOAD ---
-
+                    // --- FILE NON-PREVIEWABLE ---
                     const fileElement = document.createElement('p');
                     fileElement.className = 'text-xs mt-1';
                     const link = document.createElement('a');
                     link.href = data.fileUrl;
                     link.target = '_blank';
-                    link.className = 'underline text-yellow-400';
+                    link.className = 'underline text-yellow-400 cursor-pointer hover:text-yellow-300';
                     link.textContent = fileName;
-                    // Tampilkan size
+                    
                     const sizeText = data.fileSize ? ` (${formatBytes(data.fileSize)})` : '';
                     
                     fileElement.innerHTML = `<i class="fa-solid fa-file-arrow-down mr-1"></i>File${sizeText}: `;
@@ -522,20 +567,18 @@
                 }
             }
 
-
             messageElement.appendChild(nameElement);
             messageElement.appendChild(bubbleElement);
             messagesDiv.appendChild(messageElement);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
 
-        // ==================== FILE UPLOAD (MENGGUNAKAN MAX_FILE_SIZE BARU) ====================
+        // ==================== FILE UPLOAD ====================
         
         async function uploadFileToApi(file) {
             if (!file) return null;
 
             if (file.size > MAX_FILE_SIZE) {
-                // Pesan error akan muncul jika file melebihi 6MB
                 uploadStatus.textContent = `File size too large (max ${formatBytes(MAX_FILE_SIZE)})!`;
                 uploadStatus.classList.remove('hidden');
                 return null;
@@ -602,7 +645,7 @@
             });
         }
 
-        // ==================== BUTTON STATE MANAGEMENT & EVENT LISTENERS (same as previous version) ====================
+        // ==================== BUTTON STATE MANAGEMENT & EVENT LISTENERS ====================
 
         function updateSendButtonState() {
             const hasText = messageInput.value.trim() !== '';
